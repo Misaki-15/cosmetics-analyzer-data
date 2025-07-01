@@ -1,80 +1,24 @@
 {
   "corrections": [],
   "newKeywords": {
-    "功效": {
-      "护发": [
-        "垂顺"
-      ],
-      "除臭": [
-        "洗去汗味"
-      ],
-      "保湿": [
-        "不紧绷"
-      ]
-    },
+    "功效": {},
     "类型": {},
     "持续性": {}
   },
   "confidence": {},
   "userFeedback": {},
-  "keywordScores": {
-    "垂顺": 0.7,
-    "洗去汗味": 0.7,
-    "舒适": 0.85,
-    "24小时": 1,
-    "感觉": 1,
-    "使用后": 1,
-    "持久": 1,
-    "不紧绷": 0.7
-  },
+  "keywordScores": {},
   "conflictLog": [],
   "removedKeywords": {},
-  "lastUpdated": "2025-07-01T09:04:11.998Z",
+  "lastUpdated": "2025-07-01T09:05:25.024Z",
   "version": "2.4-Misaki15",
-  "userCorrections": [
-    {
-      "id": 1751360637184,
-      "resultId": 1751360587453,
-      "text": "使用后，感觉肌肤24小时持久舒适不紧绷",
-      "dimension": "dimension1",
-      "oldValue": "保湿",
-      "newValue": "保湿",
-      "userKeyword": "",
-      "correctionType": "replace",
-      "timestamp": "2025-07-01T09:03:57.184Z",
-      "confidence": 0.7
-    },
-    {
-      "id": 1751360637184,
-      "resultId": 1751360587453,
-      "text": "使用后，感觉肌肤24小时持久舒适不紧绷",
-      "dimension": "dimension2",
-      "oldValue": "量化指标, 使用感受, 使用后体验",
-      "newValue": "量化指标, 使用感受, 使用后体验",
-      "userKeyword": "",
-      "correctionType": "replace",
-      "timestamp": "2025-07-01T09:03:57.184Z",
-      "confidence": 0.8
-    },
-    {
-      "id": 1751360637184,
-      "resultId": 1751360587453,
-      "text": "使用后，感觉肌肤24小时持久舒适不紧绷",
-      "dimension": "dimension3",
-      "oldValue": "持久",
-      "newValue": "持久",
-      "userKeyword": "",
-      "correctionType": "replace",
-      "timestamp": "2025-07-01T09:03:57.184Z",
-      "confidence": 0.8
-    }
-  ],
+  "userCorrections": [],
   "keywordFrequency": {},
   "learningStats": {
-    "totalCorrections": 3,
+    "totalCorrections": 0,
     "accuracyRate": 100,
     "lastAccuracyUpdate": null
   },
-  "lastSyncTime": "2025-07-01T09:04:12.448Z",
+  "lastSyncTime": "2025-07-01T09:05:25.546Z",
   "syncSource": "web-app"
 }
