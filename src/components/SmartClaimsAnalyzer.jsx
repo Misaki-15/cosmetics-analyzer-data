@@ -46,18 +46,10 @@ const SmartClaimsAnalyzer = () => {
   const [selectedProductCategory, setSelectedProductCategory] = useState(''); // 新增：产品品类选择
   
   // 预设GitHub配置 - 针对 Misaki-15/cosmetics-analyzer-data 仓库
-  const getEnvVar = (name, defaultValue = '') => {
-    try {
-      return (typeof process !== 'undefined' && process.env && process.env[name]) || defaultValue;
-    } catch (e) {
-      return defaultValue;
-    }
-  };
-
-  const PRESET_GITHUB_CONFIG = {
-    owner: getEnvVar('REACT_APP_GITHUB_OWNER', 'Misaki-15'), // 你的GitHub用户名
-    repo: getEnvVar('REACT_APP_GITHUB_REPO', 'cosmetics-analyzer-data'), // 目标仓库名
-    token: getEnvVar('REACT_APP_GITHUB_TOKEN'), // 通过Vercel环境变量安全传入
+ const PRESET_GITHUB_CONFIG = {
+    owner: process.env.REACT_APP_GITHUB_OWNER || 'Misaki-15',
+    repo: process.env.REACT_APP_GITHUB_REPO || 'cosmetics-analyzer-data',
+    token: process.env.REACT_APP_GITHUB_TOKEN,
     branch: 'main', // 默认分支
     filePath: 'learning-data.json', // 单一数据文件
     autoEnable: true // 如果有token就自动启用
