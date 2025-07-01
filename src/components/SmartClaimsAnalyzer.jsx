@@ -123,109 +123,116 @@ const SmartClaimsAnalyzer = () => {
     }
   };
 
-  const saveDataToGitHub = async (dataToSave) => {
-    if (!githubConfig.enabled || !githubConfig.token || !githubConfig.owner || !githubConfig.repo) {
-      return false;
-    }
+      const saveDataToGitHub = async (dataToSave) => {
+        // 1. 首先检查基本条件
+        if (!githubConfig.enabled || !githubConfig.token || !githubConfig.owner || !githubConfig.repo) {
+          return false;
+        }
 
-    try {
-      setSyncStatus('syncing');
-      
-      // 更可靠的SHA获取逻辑
-      let sha = null;
-      let fileExists = false;
+        try {
+          setSyncStatus('syncing');
+    
+          // 2. 声明所有需要的变量
+          let sha = null;
+          let fileExists = false;
+    
+          // 3. 检查文件是否存在并获取SHA
+          try {
+            console.log('🔍 检查文件当前状态...');
+            const currentFileResponse = await fetch(
+              `https://api.github.com/repos/${githubConfig.owner}/${githubConfig.repo}/contents/learning-data.json`,
+              {
+                headers: {
+                  'Authorization': `token ${githubConfig.token}`,
+                  'Accept': 'application/vnd.github.v3+json'
+                }
+              }
+           );
 
-      try {
-        console.log('🔍 检查文件当前状态...');
-        const currentFile = await fetch(
-          `https://api.github.com/repos/${githubConfig.owner}/${githubConfig.repo}/contents/learning-data.json`,
-          {
-            headers: {
-              'Authorization': `token ${githubConfig.token}`,
-              'Accept': 'application/vnd.github.v3+json'
+            if (currentFileResponse.ok) {
+              const currentFileData = await currentFileResponse.json();
+              sha = currentFileData.sha;
+              fileExists = true;
+              console.log('✅ 文件存在，SHA:', sha.substring(0, 8) + '...');
+            } else if (currentFileResponse.status === 404) {
+              console.log('📄 文件不存在，将创建新文件');
+              fileExists = false;
+              sha = null;
+            } else {
+              throw new Error(`无法获取文件状态: ${currentFileResponse.status}`);
             }
+          } catch (checkError) {
+            console.error('❌ 检查文件状态时出错:', checkError);
+            fileExists = false;
+            sha = null;
           }
-        );
 
-        if (currentFile.ok) {
-          const fileData = await currentFile.json();
-          sha = fileData.sha;
-          fileExists = true;
-          console.log('✅ 文件存在，SHA:', sha.substring(0, 8) + '...');
-        } else if (currentFile.status === 404) {
-          console.log('📄 文件不存在，将创建新文件');
-          fileExists = false;
-          sha = null;
-        } else {
-          throw new Error(`无法获取文件状态: ${currentFile.status}`);
-        }
-      } catch (error) {
-        console.error('❌ 检查文件状态时出错:', error);
-        // 保守策略：假设文件不存在
-        fileExists = false;
-        sha = null;
-      }
+          // 4. 准备要保存的数据
+          const finalData = {
+            ...dataToSave,
+            lastSyncTime: new Date().toISOString(),
+            syncSource: 'web-app'
+          };
 
-      // 构建请求体
-      const requestBody = {
-        message: `🧠 更新学习数据 - ${new Date().toLocaleString('zh-CN')}`,
-        content: content
-      };
-
-      // 关键：如果文件存在，必须提供SHA
-      if (fileExists && sha) {
-        requestBody.sha = sha;
-        console.log('🔄 更新现有文件，SHA:', sha.substring(0, 8) + '...');
-      } else {
-        console.log('🆕 创建新文件');
-      }
-      // 准备要保存的数据
-      const finalData = {
-        ...dataToSave,
-        lastSyncTime: new Date().toISOString(),
-        syncSource: 'web-app'
-      };
-
-      // 保存/更新文件
-      const content = btoa(unescape(encodeURIComponent(JSON.stringify(finalData, null, 2)))); // base64 编码
-      
-      const response = await fetch(
-        `https://api.github.com/repos/${githubConfig.owner}/${githubConfig.repo}/contents/learning-data.json`,
-        {
-          method: 'PUT',
-          headers: {
-            'Authorization': `token ${githubConfig.token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
+          // 5. 修复中文编码并转换为base64
+          const jsonString = JSON.stringify(finalData, null, 2);
+          const encodedContent = btoa(unescape(encodeURIComponent(jsonString)));
+    
+          // 6. 构建请求体
+          const requestBody = {
             message: `🧠 更新学习数据 - ${new Date().toLocaleString('zh-CN')}`,
-            content: content,
-            ...(sha && { sha }) // 如果文件存在，需要提供 SHA
-          })
+            content: encodedContent
+          };
+
+          // 7. 如果文件存在，添加SHA
+          if (fileExists && sha) {
+            requestBody.sha = sha;
+            console.log('🔄 更新现有文件');
+          } else {
+            console.log('🆕 创建新文件');
+          }
+
+          // 8. 发送保存请求
+          console.log('💾 准备保存到GitHub...');
+          const saveResponse = await fetch(
+            `https://api.github.com/repos/${githubConfig.owner}/${githubConfig.repo}/contents/learning-data.json`,
+            {
+              method: 'PUT',
+              headers: {
+                'Authorization': `token ${githubConfig.token}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/vnd.github.v3+json'
+              },
+              body: JSON.stringify(requestBody)
+            }
+          );
+
+          // 9. 处理响应
+          if (saveResponse.ok) {
+            setSyncStatus('success');
+            setLastSyncTime(new Date());
+            console.log('✅ GitHub保存成功');
+            return true;
+          } else {
+            const errorText = await saveResponse.text();
+            console.error('GitHub API响应:', saveResponse.status, errorText);
+            throw new Error(`保存失败: ${saveResponse.status} - ${errorText}`);
+          }
+
+        } catch (error) {
+          console.error('保存到 GitHub 失败:', error);
+          setSyncStatus('error');
+          setValidationMessage({
+            type: 'error',
+            message: `❌ GitHub 保存失败: ${error.message}`
+          });
+          setTimeout(() => {
+            setValidationMessage({ type: '', message: '' });
+          }, 5000);
+          return false;
         }
-      );
-
-      if (response.ok) {
-        setSyncStatus('success');
-        setLastSyncTime(new Date());
-        return true;
-      } else {
-        throw new Error(`保存失败: ${response.status}`);
-      }
-    } catch (error) {
-      console.error('保存到 GitHub 失败:', error);
-      setSyncStatus('error');
-      setValidationMessage({
-        type: 'error',
-        message: `❌ GitHub 保存失败: ${error.message}`
-      });
-      setTimeout(() => {
-        setValidationMessage({ type: '', message: '' });
-      }, 5000);
-      return false;
-    }
-  };
-
+      };
+  
   const testGitHubConnection = async () => {
     if (!githubConfig.token || !githubConfig.owner || !githubConfig.repo) {
       setValidationMessage({
