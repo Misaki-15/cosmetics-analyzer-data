@@ -1,26 +1,16 @@
 {
   "corrections": [],
   "newKeywords": {
-    "功效": {
-      "护发": [
-        "垂顺"
-      ],
-      "除臭": [
-        "洗去汗味"
-      ]
-    },
+    "功效": {},
     "类型": {},
     "持续性": {}
   },
   "confidence": {},
   "userFeedback": {},
-  "keywordScores": {
-    "垂顺": 0.7,
-    "洗去汗味": 0.7
-  },
+  "keywordScores": {},
   "conflictLog": [],
   "removedKeywords": {},
-  "lastUpdated": "2025-07-01T08:43:34.398Z",
+  "lastUpdated": "2025-07-01T09:01:16.907Z",
   "version": "2.4-Misaki15",
   "userCorrections": [],
   "keywordFrequency": {},
@@ -29,6 +19,6 @@
     "accuracyRate": 100,
     "lastAccuracyUpdate": null
   },
-  "lastSyncTime": "2025-07-01T08:43:36.113Z",
+  "lastSyncTime": "2025-07-01T09:01:17.377Z",
   "syncSource": "web-app"
 }
