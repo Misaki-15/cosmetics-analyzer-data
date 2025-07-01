@@ -1,0 +1,24 @@
+{
+  "corrections": [],
+  "newKeywords": {
+    "功效": {},
+    "类型": {},
+    "持续性": {}
+  },
+  "confidence": {},
+  "userFeedback": {},
+  "keywordScores": {},
+  "conflictLog": [],
+  "removedKeywords": {},
+  "lastUpdated": "2025-07-01T07:27:50.096Z",
+  "version": "2.4-Misaki15",
+  "userCorrections": [],
+  "keywordFrequency": {},
+  "learningStats": {
+    "totalCorrections": 0,
+    "accuracyRate": 100,
+    "lastAccuracyUpdate": null
+  },
+  "lastSyncTime": "2025-07-01T07:27:51.286Z",
+  "syncSource": "web-app"
+}
