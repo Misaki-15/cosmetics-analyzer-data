@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#3b82f6" />
+    <meta name="description" content="智能学习型化妆品宣称分析器 v2.4 - AI驱动的多维度分析工具，支持云端存储和实时学习优化" />
+    <meta name="keywords" content="化妆品,宣称分析,AI分析,智能分析器,功效分析,品类筛选,GitHub云存储" />
+    <meta name="author" content="Misaki-15" />
+    
+    <!-- Open Graph Meta Tags -->
+    <meta property="og:title" content="智能化妆品宣称分析器 v2.4" />
+    <meta property="og:description" content="AI驱动的化妆品宣称智能分析工具，支持多维度分析、品类筛选、云端存储和自主学习优化" />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="%PUBLIC_URL%/og-image.png" />
+    
+    <!-- Twitter Card Meta Tags -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="智能化妆品宣称分析器 v2.4" />
+    <meta name="twitter:description" content="AI驱动的化妆品宣称智能分析工具" />
+    
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+    
+    <!-- Preload critical fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    
+    <!-- Analytics script placeholder -->
+    <!-- <script async src="https://www.googletagmanager.com/gtag/js?id=GA_MEASUREMENT_ID"></script> -->
+    
+    <title>智能化妆品宣称分析器 v2.4 - AI驱动分析工具</title>
+  </head>
+  <body>
+    <noscript>
+      <div style="padding: 2rem; text-align: center; background: #fee2e2; color: #dc2626; font-family: sans-serif;">
+        <h2>需要启用JavaScript</h2>
+        <p>本应用需要JavaScript才能正常运行。请在浏览器设置中启用JavaScript。</p>
+        <p>This app requires JavaScript to run. Please enable JavaScript in your browser settings.</p>
+      </div>
+    </noscript>
+    
+    <!-- Loading Screen -->
+    <div id="loading-screen" style="
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      color: white;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    ">
+      <div style="
+        width: 60px;
+        height: 60px;
+        border: 4px solid rgba(255,255,255,0.3);
+        border-top: 4px solid white;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-bottom: 20px;
+      "></div>
+      <h2 style="margin: 0; font-size: 1.5rem; font-weight: 600;">智能化妆品宣称分析器</h2>
+      <p style="margin: 10px 0 0 0; opacity: 0.8;">AI驱动 • 云端存储 • 智能学习</p>
+    </div>
+    
+    <style>
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    </style>
+    
+    <script>
+      // Hide loading screen when React app loads
+      window.addEventListener('load', function() {
+        setTimeout(function() {
+          const loadingScreen = document.getElementById('loading-screen');
+          if (loadingScreen) {
+            loadingScreen.style.opacity = '0';
+            loadingScreen.style.transition = 'opacity 0.5s ease-out';
+            setTimeout(function() {
+              loadingScreen.style.display = 'none';
+            }, 500);
+          }
+        }, 1000);
+      });
+    </script>
+    
+    <div id="root"></div>
+  </body>
+</html>
