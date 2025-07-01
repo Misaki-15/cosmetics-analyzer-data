@@ -44,7 +44,24 @@ const SmartClaimsAnalyzer = () => {
   const [exportData, setExportData] = useState('');
   const [showExportModal, setShowExportModal] = useState(false);
   const [selectedProductCategory, setSelectedProductCategory] = useState(''); // 新增：产品品类选择
-  
+
+  // 智能消息保护机制
+  const setValidationMessageSafe = (newMessage) => {
+    setValidationMessage(prev => {
+      // 如果当前是成功消息，且新消息是GitHub 409错误，保护成功消息
+      if (prev.type === 'success' && 
+          newMessage.type === 'error' && 
+          newMessage.message.includes('GitHub 保存失败') &&
+          newMessage.message.includes('409')) {
+        console.log('🛡️ 保护成功消息，忽略409冲突错误');
+        return prev; // 保持原来的成功消息
+      }
+      
+      // 其他错误正常显示
+      return newMessage;
+    });
+  };
+
   // 预设GitHub配置 - 针对 Misaki-15/cosmetics-analyzer-data 仓库
  const PRESET_GITHUB_CONFIG = {
     owner: process.env.REACT_APP_GITHUB_OWNER || 'Misaki-15',
@@ -187,7 +204,7 @@ const SmartClaimsAnalyzer = () => {
     } catch (error) {
       console.error('保存到 GitHub 失败:', error);
       setSyncStatus('error');
-      setValidationMessage({
+      setValidationMessageSafe({
         type: 'error',
         message: `❌ GitHub 保存失败: ${error.message}`
       });
