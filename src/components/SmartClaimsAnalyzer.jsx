@@ -131,25 +131,54 @@ const SmartClaimsAnalyzer = () => {
     try {
       setSyncStatus('syncing');
       
-      // 先获取文件的 SHA (如果存在)
+      // 更可靠的SHA获取逻辑
       let sha = null;
+      let fileExists = false;
+
       try {
+        console.log('🔍 检查文件当前状态...');
         const currentFile = await fetch(
           `https://api.github.com/repos/${githubConfig.owner}/${githubConfig.repo}/contents/learning-data.json`,
           {
             headers: {
-              'Authorization': `token ${githubConfig.token}`
+              'Authorization': `token ${githubConfig.token}`,
+              'Accept': 'application/vnd.github.v3+json'
             }
           }
         );
+
         if (currentFile.ok) {
           const fileData = await currentFile.json();
           sha = fileData.sha;
+          fileExists = true;
+          console.log('✅ 文件存在，SHA:', sha.substring(0, 8) + '...');
+        } else if (currentFile.status === 404) {
+          console.log('📄 文件不存在，将创建新文件');
+          fileExists = false;
+          sha = null;
+        } else {
+          throw new Error(`无法获取文件状态: ${currentFile.status}`);
         }
-      } catch (e) {
-        // 文件不存在，首次创建
+      } catch (error) {
+        console.error('❌ 检查文件状态时出错:', error);
+        // 保守策略：假设文件不存在
+        fileExists = false;
+        sha = null;
       }
 
+      // 构建请求体
+      const requestBody = {
+        message: `🧠 更新学习数据 - ${new Date().toLocaleString('zh-CN')}`,
+        content: content
+      };
+
+      // 关键：如果文件存在，必须提供SHA
+      if (fileExists && sha) {
+        requestBody.sha = sha;
+        console.log('🔄 更新现有文件，SHA:', sha.substring(0, 8) + '...');
+      } else {
+        console.log('🆕 创建新文件');
+      }
       // 准备要保存的数据
       const finalData = {
         ...dataToSave,
