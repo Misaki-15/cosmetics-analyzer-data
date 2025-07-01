@@ -158,7 +158,7 @@ const SmartClaimsAnalyzer = () => {
       };
 
       // 保存/更新文件
-      const content = btoa(JSON.stringify(finalData, null, 2)); // base64 编码
+      const content = btoa(unescape(encodeURIComponent(JSON.stringify(finalData, null, 2)))); // base64 编码
       
       const response = await fetch(
         `https://api.github.com/repos/${githubConfig.owner}/${githubConfig.repo}/contents/learning-data.json`,
