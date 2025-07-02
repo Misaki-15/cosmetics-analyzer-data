@@ -1395,40 +1395,6 @@ const SmartClaimsAnalyzer = () => {
   }
 };
 
-// 可选：也可以为用户提供清除黑名单的管理功能
-const clearRemovedKeywords = (category = null, efficacy = null) => {
-  setLearningData(prev => {
-    const newData = { ...prev };
-    
-    if (category && efficacy) {
-      // 清除特定功效的黑名单
-      const key = `${category}-${efficacy}`;
-      delete newData.removedKeywords[key];
-    } else if (category) {
-      // 清除整个类别的黑名单
-      Object.keys(newData.removedKeywords).forEach(key => {
-        if (key.startsWith(category + '-')) {
-          delete newData.removedKeywords[key];
-        }
-      });
-    } else {
-      // 清除所有黑名单
-      newData.removedKeywords = {};
-    }
-    
-    return newData;
-  });
-  
-  setValidationMessage({
-    type: 'info',
-    message: `🧹 已清除${category ? `${category}${efficacy ? `-${efficacy}` : ''}的` : '所有'}黑名单记录`
-  });
-  
-  setTimeout(() => {
-    setValidationMessage({ type: '', message: '' });
-  }, 3000);
-};
-
     // 品类选择提醒
     if (!selectedProductCategory) {
       setValidationMessage({
