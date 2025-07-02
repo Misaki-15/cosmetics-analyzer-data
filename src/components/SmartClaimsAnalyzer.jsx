@@ -137,10 +137,11 @@ const SmartClaimsAnalyzer = () => {
   }
 };
   
-  // 预设GitHub配置 - 针对 Misaki-15/cosmetics-analyzer-data 仓库
+  // 预设GitHub配置 - 针对 Misaki-15/cosmetics-analyzer-learning 仓库
   const PRESET_GITHUB_CONFIG = {
     owner: process.env.REACT_APP_GITHUB_OWNER || 'Misaki-15',
     repo: process.env.REACT_APP_GITHUB_REPO || 'cosmetics-analyzer-learning',
+    token: process.env.REACT_APP_GITHUB_TOKEN,
     branch: 'main', // 默认分支
     filePath: 'learning-data.json', // 单一数据文件
     autoEnable: true // 如果有token就自动启用
@@ -342,7 +343,7 @@ const SmartClaimsAnalyzer = () => {
   useEffect(() => {
     const initializeGitHub = async () => {
       if (githubConfig.enabled && githubConfig.token) {
-        console.log('🚀 自动初始化GitHub连接: Misaki-15/cosmetics-analyzer-data');
+        console.log('🚀 自动初始化GitHub连接: Misaki-15/cosmetics-analyzer-learning');
         
         // 尝试加载已有的学习数据
         try {
@@ -1806,7 +1807,7 @@ const SmartClaimsAnalyzer = () => {
                 <div className="mb-4 p-3 bg-blue-50 rounded-lg">
                   <div className="font-semibold text-blue-800 mb-2">🚀 预设自动配置（Vercel部署）</div>
                   <div className="text-sm text-blue-700 space-y-1">
-                    <div>目标仓库: <code className="bg-white px-1 rounded">Misaki-15/cosmetics-analyzer-data</code></div>
+                    <div>目标仓库: <code className="bg-white px-1 rounded">Misaki-15/cosmetics-analyzer-learning</code></div>
                     <div>数据文件: <code className="bg-white px-1 rounded">learning-data.json</code></div>
                     <div>部署平台: <strong>Vercel</strong></div>
                     <div>连接状态: {githubConfig.enabled ? 
@@ -1842,7 +1843,7 @@ const SmartClaimsAnalyzer = () => {
                     type="text"
                     value={githubConfig.repo}
                     onChange={(e) => setGithubConfig(prev => ({ ...prev, repo: e.target.value }))}
-                    placeholder="cosmetics-analyzer-data"
+                    placeholder="cosmetics-analyzer-learning"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
                     disabled={githubConfig.enabled && PRESET_GITHUB_CONFIG.autoEnable}
                   />
@@ -1927,12 +1928,12 @@ const SmartClaimsAnalyzer = () => {
                 <div className="space-y-1 text-xs">
                   {PRESET_GITHUB_CONFIG.autoEnable ? (
                     <>
-                      <div><strong>步骤1：</strong> 在GitHub创建公开仓库 <code>Misaki-15/cosmetics-analyzer-data</code></div>
+                      <div><strong>步骤1：</strong> 在GitHub创建公开仓库 <code>Misaki-15/cosmetics-analyzer-learning</code></div>
                       <div><strong>步骤2：</strong> 生成GitHub Personal Access Token（需要repo权限）</div>
                       <div><strong>步骤3：</strong> 在Vercel项目设置 → Environment Variables 中添加：</div>
                       <div className="ml-4 bg-white p-2 rounded text-gray-800 font-mono text-xs">
                         REACT_APP_GITHUB_OWNER=Misaki-15<br/>
-                        REACT_APP_GITHUB_REPO=cosmetics-analyzer-data<br/>
+                        REACT_APP_GITHUB_REPO=cosmetics-analyzer-learning<br/>
                         REACT_APP_GITHUB_TOKEN=ghp_your_token_here
                       </div>
                       <div><strong>步骤4：</strong> 重新部署项目，程序将自动连接GitHub并开始云端存储</div>
@@ -1940,7 +1941,7 @@ const SmartClaimsAnalyzer = () => {
                     </>
                   ) : (
                     <>
-                      <div>1. 在 GitHub 创建一个<strong>公开仓库</strong>（如：cosmetics-analyzer-data）</div>
+                      <div>1. 在 GitHub 创建一个<strong>公开仓库</strong>（如：cosmetics-analyzer-learning）</div>
                       <div>2. 生成 Personal Access Token，需要 <strong>repo</strong> 权限</div>
                       <div>3. 填写上述信息并测试连接</div>
                       <div>4. 启用后，学习数据将自动同步到 GitHub</div>
