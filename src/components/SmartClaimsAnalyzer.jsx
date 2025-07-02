@@ -1313,11 +1313,20 @@ const SmartClaimsAnalyzer = () => {
       return newData;
     });
 
+    // 显示成功消息
     setValidationMessage({
       type: 'success',
       message: `✅ 成功添加关键词 "${keyword}" 到 ${efficacy}`
     });
-    
+
+    // 👇 将原来的保存调用替换为这个
+    const saveSuccess = await saveLearningDataSmart(true);
+
+    if (saveSuccess) {
+      console.log('✅ 关键词添加和保存完成');
+    }
+
+    // 清除成功消息
     setTimeout(() => {
       setValidationMessage({ type: '', message: '' });
     }, 3000);
