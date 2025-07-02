@@ -135,8 +135,7 @@ const SmartClaimsAnalyzer = () => {
   // 预设GitHub配置 - 针对 Misaki-15/cosmetics-analyzer-data 仓库
  const PRESET_GITHUB_CONFIG = {
     owner: process.env.REACT_APP_GITHUB_OWNER || 'Misaki-15',
-    repo: process.env.REACT_APP_GITHUB_REPO || 'cosmetics-analyzer-data',
-    token: process.env.REACT_APP_GITHUB_TOKEN,
+    repo: process.env.REACT_APP_GITHUB_REPO || 'cosmetics-analyzer-learning',
     branch: 'main', // 默认分支
     filePath: 'learning-data.json', // 单一数据文件
     autoEnable: true // 如果有token就自动启用
