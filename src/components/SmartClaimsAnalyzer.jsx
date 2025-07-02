@@ -1309,91 +1309,101 @@ const SmartClaimsAnalyzer = () => {
 
   // 学习新关键词
   const learnNewKeyword = async (keyword, category, efficacy) => {
-  try {
-    // 1. 先构建完整的新数据
-    const updatedData = { ...learningData };
+    try {
+      // 1. 先构建完整的新数据
+      const updatedData = { ...learningData };
     
-    // 2. 初始化数据结构
-    if (!updatedData.newKeywords) {
-      updatedData.newKeywords = { 功效: {}, 类型: {}, 持续性: {} };
-    }
-    if (!updatedData.newKeywords[category]) {
-      updatedData.newKeywords[category] = {};
-    }
-    if (!updatedData.newKeywords[category][efficacy]) {
-      updatedData.newKeywords[category][efficacy] = [];
-    }
-    if (!updatedData.keywordScores) {
-      updatedData.keywordScores = {};
-    }
-    if (!updatedData.removedKeywords) {
-      updatedData.removedKeywords = {};
-    }
+      // 2. 初始化数据结构
+      if (!updatedData.newKeywords) {
+        updatedData.newKeywords = { 功效: {}, 类型: {}, 持续性: {} };
+      }
+      if (!updatedData.newKeywords[category]) {
+        updatedData.newKeywords[category] = {};
+      }
+      if (!updatedData.newKeywords[category][efficacy]) {
+        updatedData.newKeywords[category][efficacy] = [];
+      }
+      if (!updatedData.keywordScores) {
+        updatedData.keywordScores = {};
+      }
+      if (!updatedData.removedKeywords) {
+        updatedData.removedKeywords = {};
+      }
     
-    // 3. 检查关键词是否已存在
-    if (updatedData.newKeywords[category][efficacy].includes(keyword)) {
+      // 3. 检查关键词是否已存在
+      if (updatedData.newKeywords[category][efficacy].includes(keyword)) {
+        setValidationMessage({
+          type: 'warning',
+          message: `⚠️ 关键词 "${keyword}" 已存在于 ${efficacy} 中`
+        });
+        setTimeout(() => {
+          setValidationMessage({ type: '', message: '' });
+        }, 3000);
+        return false;
+      }
+    
+      // 4. 🔧 核心修复：清除黑名单记录（如果存在）
+      const removedKey = `${category}-${efficacy}`;
+      let wasInBlacklist = false;
+      if (updatedData.removedKeywords[removedKey]) {
+        const originalLength = updatedData.removedKeywords[removedKey].length;
+        updatedData.removedKeywords[removedKey] = updatedData.removedKeywords[removedKey].filter(
+          k => k !== keyword
+        );
+        wasInBlacklist = originalLength > updatedData.removedKeywords[removedKey].length;
+      
+        // 如果黑名单为空，删除该项
+        if (updatedData.removedKeywords[removedKey].length === 0) {
+          delete updatedData.removedKeywords[removedKey];
+        }
+      
+        if (wasInBlacklist) {
+          console.log(`🔧 从黑名单中移除关键词: "${keyword}" (${category}-${efficacy})`);
+        }
+      }
+    
+      // 5. 添加新关键词
+      updatedData.newKeywords[category][efficacy].push(keyword);
+      updatedData.keywordScores[keyword] = 0.7;
+      updatedData.lastUpdated = new Date().toISOString();
+    
+      // 6. 同时更新状态和保存
+      setLearningData(updatedData);
+    
+      // 7. 显示成功消息
       setValidationMessage({
-        type: 'warning',
-        message: `⚠️ 关键词 "${keyword}" 已存在于 ${efficacy} 中`
+        type: 'success',
+        message: `✅ 成功添加关键词 "${keyword}" 到 ${efficacy}${
+          wasInBlacklist ? ' (已从删除记录中恢复)' : ''
+        }`
+      });
+    
+      // 8. 保存更新后的数据
+      const saveSuccess = await saveLearningDataSmart(true, updatedData);
+    
+      if (saveSuccess) {
+        console.log('✅ 关键词添加和保存完成');
+      }
+    
+      // 9. 清除成功消息
+      setTimeout(() => {
+        setValidationMessage({ type: '', message: '' });
+      }, 3000);
+    
+      return true;
+    
+    } catch (error) {
+      console.error('❌ 添加关键词失败:', error);
+      setValidationMessage({
+        type: 'error',
+        message: `❌ 添加关键词失败: ${error.message}`
       });
       setTimeout(() => {
         setValidationMessage({ type: '', message: '' });
       }, 3000);
-      return;
+      return false;
     }
-    
-    // 4. 🔧 核心修复：清除黑名单记录（如果存在）
-    const removedKey = `${category}-${efficacy}`;
-    if (updatedData.removedKeywords[removedKey]) {
-      updatedData.removedKeywords[removedKey] = updatedData.removedKeywords[removedKey].filter(
-        k => k !== keyword
-      );
-      // 如果黑名单为空，删除该项
-      if (updatedData.removedKeywords[removedKey].length === 0) {
-        delete updatedData.removedKeywords[removedKey];
-      }
-      console.log(`🔧 从黑名单中移除关键词: "${keyword}" (${category}-${efficacy})`);
-    }
-    
-    // 5. 添加新关键词
-    updatedData.newKeywords[category][efficacy].push(keyword);
-    updatedData.keywordScores[keyword] = 0.7;
-    updatedData.lastUpdated = new Date().toISOString();
-    
-    // 6. 同时更新状态和保存
-    setLearningData(updatedData);
-    
-    // 7. 显示成功消息
-    setValidationMessage({
-      type: 'success',
-      message: `✅ 成功添加关键词 "${keyword}" 到 ${efficacy}${
-        updatedData.removedKeywords[removedKey] ? ' (已从黑名单移除)' : ''
-      }`
-    });
-    
-    // 8. 保存更新后的数据
-    const saveSuccess = await saveLearningDataSmart(true, updatedData);
-    
-    if (saveSuccess) {
-      console.log('✅ 关键词添加和保存完成');
-    }
-    
-    // 9. 清除成功消息
-    setTimeout(() => {
-      setValidationMessage({ type: '', message: '' });
-    }, 3000);
-    
-  } catch (error) {
-    console.error('❌ 添加关键词失败:', error);
-    setValidationMessage({
-      type: 'error',
-      message: `❌ 添加关键词失败: ${error.message}`
-    });
-    setTimeout(() => {
-      setValidationMessage({ type: '', message: '' });
-    }, 3000);
-  }
-};
+  };
 
     // 品类选择提醒
     if (!selectedProductCategory) {
