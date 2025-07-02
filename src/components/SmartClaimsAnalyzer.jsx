@@ -66,74 +66,79 @@ const SmartClaimsAnalyzer = () => {
   };
 
   // 智能保存管理函数
-  const saveLearningDataSmart = async (immediate = false) => {
-    // 如果正在保存中，处理冲突
-    if (isSaving) {
-      if (immediate) {
-        console.log('🔄 当前正在保存，标记为待保存');
-        setPendingSave(true);
-        return true; // 返回成功，避免显示错误
-      } else {
-        console.log('⏳ 正在保存中，跳过自动保存');
-        return true;
-      }
-    }
-
-    try {
-      setIsSaving(true);
-      console.log(`💾 开始${immediate ? '立即' : '自动'}保存学习数据...`);
-    
-      const updatedData = {
-        ...learningData,
-        lastUpdated: new Date().toISOString()
-      };
-    
-      setLearningData(updatedData);
-      setLastSaveTime(new Date());
-    
-      if (githubConfig.enabled) {
-        const success = await saveDataToGitHub(updatedData);
-        if (success) {
-          console.log('✅ GitHub保存成功');
-          return true;
-        } else {
-          throw new Error('GitHub保存返回失败');
-        }
-      }
-    
-      console.log('✅ 本地保存成功');
+  const saveLearningDataSmart = async (immediate = false, dataToSave = null) => {
+  // 如果正在保存中，处理冲突
+  if (isSaving) {
+    if (immediate) {
+      console.log('🔄 当前正在保存，标记为待保存');
+      setPendingSave(true);
       return true;
+    } else {
+      console.log('⏳ 正在保存中，跳过自动保存');
+      return true;
+    }
+  }
+
+  try {
+    setIsSaving(true);
+    console.log(`💾 开始${immediate ? '立即' : '自动'}保存学习数据...`);
     
-    } catch (error) {
-      console.error('❌ 保存失败:', error);
+    // 使用传入的数据或当前状态数据
+    const updatedData = dataToSave || {
+      ...learningData,
+      lastUpdated: new Date().toISOString()
+    };
     
-      // 只在立即保存时显示错误给用户
-      if (immediate) {
-        setValidationMessageSafe({
-          type: 'error',
-          message: `❌ 保存失败: ${error.message}`
-        });
-        setTimeout(() => {
-          setValidationMessage({ type: '', message: '' });
-        }, 3000);
-      }
+    // 如果没有传入数据，更新状态
+    if (!dataToSave) {
+      setLearningData(updatedData);
+    }
     
-      return false;
+    setLastSaveTime(new Date());
     
-    } finally {
-      setIsSaving(false);
-    
-      // 检查是否有待保存的操作
-      if (pendingSave) {
-        setPendingSave(false);
-        console.log('🔄 执行待保存操作');
-        setTimeout(() => saveLearningDataSmart(false), 1500);
+    if (githubConfig.enabled) {
+      const success = await saveDataToGitHub(updatedData);
+      if (success) {
+        console.log('✅ GitHub保存成功');
+        return true;
+      } else {
+        throw new Error('GitHub保存返回失败');
       }
     }
-  };
+    
+    console.log('✅ 本地保存成功');
+    return true;
+    
+  } catch (error) {
+    console.error('❌ 保存失败:', error);
+    
+    // 只在立即保存时显示错误给用户
+    if (immediate) {
+      setValidationMessageSafe({
+        type: 'error',
+        message: `❌ 保存失败: ${error.message}`
+      });
+      setTimeout(() => {
+        setValidationMessage({ type: '', message: '' });
+      }, 3000);
+    }
+    
+    return false;
+    
+  } finally {
+    setIsSaving(false);
+    
+    // 检查是否有待保存的操作
+    if (pendingSave) {
+      setPendingSave(false);
+      console.log('🔄 执行待保存操作');
+      setTimeout(() => saveLearningDataSmart(false), 1500);
+    }
+  }
+};
   
   // 预设GitHub配置 - 针对 Misaki-15/cosmetics-analyzer-data 仓库
- const PRESET_GITHUB_CONFIG = {
+  const PRESET_GITHUB_CONFIG = {
     owner: process.env.REACT_APP_GITHUB_OWNER || 'Misaki-15',
     repo: process.env.REACT_APP_GITHUB_REPO || 'cosmetics-analyzer-learning',
     branch: 'main', // 默认分支
@@ -1290,48 +1295,74 @@ const SmartClaimsAnalyzer = () => {
   };
 
   // 学习新关键词
-  const learnNewKeyword = (keyword, category, efficacy) => {
-    setLearningData(prev => {
-      const newData = { ...prev };
-      
-      if (!newData.newKeywords) {
-        newData.newKeywords = { 功效: {}, 类型: {}, 持续性: {} };
-      }
-      if (!newData.newKeywords[category]) {
-        newData.newKeywords[category] = {};
-      }
-      if (!newData.newKeywords[category][efficacy]) {
-        newData.newKeywords[category][efficacy] = [];
-      }
-      
-      if (!newData.newKeywords[category][efficacy].includes(keyword)) {
-        newData.newKeywords[category][efficacy].push(keyword);
-        newData.keywordScores[keyword] = 0.7;
-      }
-      
-      return newData;
-    });
-
-    // 显示成功消息
+  const learnNewKeyword = async (keyword, category, efficacy) => {
+  try {
+    // 1. 先构建完整的新数据
+    const updatedData = { ...learningData };
+    
+    // 2. 初始化数据结构
+    if (!updatedData.newKeywords) {
+      updatedData.newKeywords = { 功效: {}, 类型: {}, 持续性: {} };
+    }
+    if (!updatedData.newKeywords[category]) {
+      updatedData.newKeywords[category] = {};
+    }
+    if (!updatedData.newKeywords[category][efficacy]) {
+      updatedData.newKeywords[category][efficacy] = [];
+    }
+    if (!updatedData.keywordScores) {
+      updatedData.keywordScores = {};
+    }
+    
+    // 3. 检查关键词是否已存在
+    if (updatedData.newKeywords[category][efficacy].includes(keyword)) {
+      setValidationMessage({
+        type: 'warning',
+        message: `⚠️ 关键词 "${keyword}" 已存在于 ${efficacy} 中`
+      });
+      setTimeout(() => {
+        setValidationMessage({ type: '', message: '' });
+      }, 3000);
+      return;
+    }
+    
+    // 4. 添加新关键词
+    updatedData.newKeywords[category][efficacy].push(keyword);
+    updatedData.keywordScores[keyword] = 0.7;
+    updatedData.lastUpdated = new Date().toISOString();
+    
+    // 5. 同时更新状态和保存
+    setLearningData(updatedData);
+    
+    // 6. 显示成功消息
     setValidationMessage({
       type: 'success',
       message: `✅ 成功添加关键词 "${keyword}" 到 ${efficacy}`
     });
-
-    // 👇 将原来的保存调用替换为这个
-    const saveSuccess = await saveLearningDataSmart(true);
-
+    
+    // 7. 保存更新后的数据
+    const saveSuccess = await saveLearningDataSmart(true, updatedData); // 传入更新后的数据
+    
     if (saveSuccess) {
       console.log('✅ 关键词添加和保存完成');
     }
-
-    // 清除成功消息
+    
+    // 8. 清除成功消息
     setTimeout(() => {
       setValidationMessage({ type: '', message: '' });
     }, 3000);
     
-    return true;
-  };
+  } catch (error) {
+    console.error('❌ 添加关键词失败:', error);
+    setValidationMessage({
+      type: 'error',
+      message: `❌ 添加关键词失败: ${error.message}`
+    });
+    setTimeout(() => {
+      setValidationMessage({ type: '', message: '' });
+    }, 3000);
+  }
+};
 
   const handleAutoAnalysis = () => {
     if (!inputText.trim()) {
