@@ -382,17 +382,31 @@ const SmartClaimsAnalyzer = () => {
     initializeGitHub();
   }, []); // 只在组件挂载时执行一次
 
-  // 实时保存机制 - 更频繁的自动同步
+  // 改进的自动保存逻辑 - 防抖 + 状态检查
   useEffect(() => {
-    if (autoSaveEnabled && saveQueue.length > 0) {
-      const saveTimer = setTimeout(async () => {
-        await saveLearningData();
-        setSaveQueue([]);
-      }, githubConfig.enabled ? 1000 : 2000); // GitHub启用时更快保存
-
-      return () => clearTimeout(saveTimer);
+    if (autoSaveEnabled && saveQueue.length > 0 && !isSaving) {
+      // 清除之前的定时器（防抖机制）
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        console.log('🚫 清除之前的保存定时器');
+      }
+    
+      // 设置新的防抖定时器
+      saveTimeoutRef.current = setTimeout(async () => {
+        console.log('⏰ 自动保存定时器触发');
+        const success = await saveLearningDataSmart(false);
+        if (success) {
+          setSaveQueue([]);
+        }
+      }, 3000); // 增加延迟到3秒
     }
-  }, [saveQueue, autoSaveEnabled, githubConfig.enabled]);
+  
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [saveQueue, autoSaveEnabled, isSaving, learningData]);
 
   // 监听学习数据变化
   useEffect(() => {
