@@ -65,6 +65,73 @@ const SmartClaimsAnalyzer = () => {
     });
   };
 
+  // 智能保存管理函数
+  const saveLearningDataSmart = async (immediate = false) => {
+    // 如果正在保存中，处理冲突
+    if (isSaving) {
+      if (immediate) {
+        console.log('🔄 当前正在保存，标记为待保存');
+        setPendingSave(true);
+        return true; // 返回成功，避免显示错误
+      } else {
+        console.log('⏳ 正在保存中，跳过自动保存');
+        return true;
+      }
+    }
+
+    try {
+      setIsSaving(true);
+      console.log(`💾 开始${immediate ? '立即' : '自动'}保存学习数据...`);
+    
+      const updatedData = {
+        ...learningData,
+        lastUpdated: new Date().toISOString()
+      };
+    
+      setLearningData(updatedData);
+      setLastSaveTime(new Date());
+    
+      if (githubConfig.enabled) {
+        const success = await saveDataToGitHub(updatedData);
+        if (success) {
+          console.log('✅ GitHub保存成功');
+          return true;
+        } else {
+          throw new Error('GitHub保存返回失败');
+        }
+      }
+    
+      console.log('✅ 本地保存成功');
+      return true;
+    
+    } catch (error) {
+      console.error('❌ 保存失败:', error);
+    
+      // 只在立即保存时显示错误给用户
+      if (immediate) {
+        setValidationMessageSafe({
+          type: 'error',
+          message: `❌ 保存失败: ${error.message}`
+        });
+        setTimeout(() => {
+          setValidationMessage({ type: '', message: '' });
+        }, 3000);
+      }
+    
+      return false;
+    
+    } finally {
+      setIsSaving(false);
+    
+      // 检查是否有待保存的操作
+      if (pendingSave) {
+        setPendingSave(false);
+        console.log('🔄 执行待保存操作');
+        setTimeout(() => saveLearningDataSmart(false), 1500);
+      }
+    }
+  };
+  
   // 预设GitHub配置 - 针对 Misaki-15/cosmetics-analyzer-data 仓库
  const PRESET_GITHUB_CONFIG = {
     owner: process.env.REACT_APP_GITHUB_OWNER || 'Misaki-15',
