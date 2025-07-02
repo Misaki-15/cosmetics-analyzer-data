@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Download, RotateCcw, Sparkles, TrendingUp, BarChart3, Eye, Brain, BookOpen, Target, AlertCircle, CheckCircle, XCircle, Shield, Save, Upload, Edit, ThumbsUp, ThumbsDown, Copy, Github, Cloud, Wifi, WifiOff } from 'lucide-react';
 
 const SmartClaimsAnalyzer = () => {
@@ -44,7 +44,10 @@ const SmartClaimsAnalyzer = () => {
   const [exportData, setExportData] = useState('');
   const [showExportModal, setShowExportModal] = useState(false);
   const [selectedProductCategory, setSelectedProductCategory] = useState(''); // 新增：产品品类选择
-
+  const [isSaving, setIsSaving] = useState(false);
+  const [pendingSave, setPendingSave] = useState(false);
+  const saveTimeoutRef = useRef(null);
+  
   // 智能消息保护机制
   const setValidationMessageSafe = (newMessage) => {
     setValidationMessage(prev => {
