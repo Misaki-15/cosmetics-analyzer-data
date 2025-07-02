@@ -1339,28 +1339,41 @@ const SmartClaimsAnalyzer = () => {
       return;
     }
     
-    // 4. 添加新关键词
+    // 4. 🔧 核心修复：清除黑名单记录（如果存在）
+    const removedKey = `${category}-${efficacy}`;
+    if (updatedData.removedKeywords[removedKey]) {
+      updatedData.removedKeywords[removedKey] = updatedData.removedKeywords[removedKey].filter(
+        k => k !== keyword
+      );
+      // 如果黑名单为空，删除该项
+      if (updatedData.removedKeywords[removedKey].length === 0) {
+        delete updatedData.removedKeywords[removedKey];
+      }
+      console.log(`🔧 从黑名单中移除关键词: "${keyword}" (${category}-${efficacy})`);
+    }
+    
+    // 5. 添加新关键词
     updatedData.newKeywords[category][efficacy].push(keyword);
     updatedData.keywordScores[keyword] = 0.7;
     updatedData.lastUpdated = new Date().toISOString();
     
-    // 5. 同时更新状态和保存
+    // 6. 同时更新状态和保存
     setLearningData(updatedData);
     
-    // 6. 显示成功消息
+    // 7. 显示成功消息
     setValidationMessage({
       type: 'success',
       message: `✅ 成功添加关键词 "${keyword}" 到 ${efficacy}`
     });
     
-    // 7. 保存更新后的数据
+    // 8. 保存更新后的数据
     const saveSuccess = await saveLearningDataSmart(true, updatedData); // 传入更新后的数据
     
     if (saveSuccess) {
       console.log('✅ 关键词添加和保存完成');
     }
     
-    // 8. 清除成功消息
+    // 9. 清除成功消息
     setTimeout(() => {
       setValidationMessage({ type: '', message: '' });
     }, 3000);
