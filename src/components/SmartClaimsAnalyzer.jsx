@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Download, RotateCcw, Sparkles, TrendingUp, BarChart3, Eye, Brain, BookOpen, Target, AlertCircle, CheckCircle, XCircle, Shield, Save, Upload, Edit, ThumbsUp, ThumbsDown, Copy, Github, Cloud, Wifi, WifiOff } from 'lucide-react';
+import { Download, RotateCcw, Sparkles, TrendingUp, BarChart3, Eye, Brain, BookOpen, Target, AlertCircle, CheckCircle, XCircle, Shield, Save, Upload, Edit, ThumbsUp, ThumbsDown, Copy, Github, Cloud, Wifi, WifiOff, Users, User, Globe } from 'lucide-react';
 
 const SmartClaimsAnalyzer = () => {
   // 初始数据加载函数
@@ -17,13 +17,15 @@ const SmartClaimsAnalyzer = () => {
       conflictLog: [],
       removedKeywords: {},
       lastUpdated: null,
-      version: '2.4-Misaki15',
+      version: '2.4-Misaki15-Public',
       userCorrections: [],
       keywordFrequency: {},
       learningStats: {
         totalCorrections: 0,
         accuracyRate: 100,
-        lastAccuracyUpdate: null
+        lastAccuracyUpdate: null,
+        totalUsers: 0,
+        publicContributions: 0
       }
     };
   };
@@ -46,6 +48,7 @@ const SmartClaimsAnalyzer = () => {
   const [selectedProductCategory, setSelectedProductCategory] = useState(''); // 新增：产品品类选择
   const [isSaving, setIsSaving] = useState(false);
   const [pendingSave, setPendingSave] = useState(false);
+  const [learningMode, setLearningMode] = useState('public'); // 'public' 或 'personal'
   const saveTimeoutRef = useRef(null);
   
   // 智能消息保护机制
@@ -67,97 +70,109 @@ const SmartClaimsAnalyzer = () => {
 
   // 智能保存管理函数
   const saveLearningDataSmart = async (immediate = false, dataToSave = null) => {
-  // 如果正在保存中，处理冲突
-  if (isSaving) {
-    if (immediate) {
-      console.log('🔄 当前正在保存，标记为待保存');
-      setPendingSave(true);
-      return true;
-    } else {
-      console.log('⏳ 正在保存中，跳过自动保存');
-      return true;
-    }
-  }
-
-  try {
-    setIsSaving(true);
-    console.log(`💾 开始${immediate ? '立即' : '自动'}保存学习数据...`);
-    
-    // 使用传入的数据或当前状态数据
-    const updatedData = dataToSave || {
-      ...learningData,
-      lastUpdated: new Date().toISOString()
-    };
-    
-    // 如果没有传入数据，更新状态
-    if (!dataToSave) {
-      setLearningData(updatedData);
-    }
-    
-    setLastSaveTime(new Date());
-    
-    if (githubConfig.enabled) {
-      const success = await saveDataToGitHub(updatedData);
-      if (success) {
-        console.log('✅ GitHub保存成功');
+    // 如果正在保存中，处理冲突
+    if (isSaving) {
+      if (immediate) {
+        console.log('🔄 当前正在保存，标记为待保存');
+        setPendingSave(true);
         return true;
       } else {
-        throw new Error('GitHub保存返回失败');
+        console.log('⏳ 正在保存中，跳过自动保存');
+        return true;
       }
     }
-    
-    console.log('✅ 本地保存成功');
-    return true;
-    
-  } catch (error) {
-    console.error('❌ 保存失败:', error);
-    
-    // 只在立即保存时显示错误给用户
-    if (immediate) {
-      setValidationMessageSafe({
-        type: 'error',
-        message: `❌ 保存失败: ${error.message}`
-      });
-      setTimeout(() => {
-        setValidationMessage({ type: '', message: '' });
-      }, 3000);
+
+    try {
+      setIsSaving(true);
+      console.log(`💾 开始${immediate ? '立即' : '自动'}保存学习数据...`);
+      
+      // 使用传入的数据或当前状态数据
+      const updatedData = dataToSave || {
+        ...learningData,
+        lastUpdated: new Date().toISOString()
+      };
+      
+      // 如果没有传入数据，更新状态
+      if (!dataToSave) {
+        setLearningData(updatedData);
+      }
+      
+      setLastSaveTime(new Date());
+      
+      // 根据学习模式选择保存方式
+      if (learningMode === 'public') {
+        const success = await saveToPublicLibrary(updatedData);
+        if (success) {
+          console.log('✅ 公共学习库保存成功');
+          return true;
+        } else {
+          throw new Error('公共学习库保存失败');
+        }
+      } else if (githubConfig.enabled) {
+        const success = await saveDataToGitHub(updatedData);
+        if (success) {
+          console.log('✅ 个人GitHub保存成功');
+          return true;
+        } else {
+          throw new Error('个人GitHub保存失败');
+        }
+      }
+      
+      console.log('✅ 本地保存成功');
+      return true;
+      
+    } catch (error) {
+      console.error('❌ 保存失败:', error);
+      
+      // 只在立即保存时显示错误给用户
+      if (immediate) {
+        setValidationMessageSafe({
+          type: 'error',
+          message: `❌ 保存失败: ${error.message}`
+        });
+        setTimeout(() => {
+          setValidationMessage({ type: '', message: '' });
+        }, 3000);
+      }
+      
+      return false;
+      
+    } finally {
+      setIsSaving(false);
+      
+      // 检查是否有待保存的操作
+      if (pendingSave) {
+        setPendingSave(false);
+        console.log('🔄 执行待保存操作');
+        setTimeout(() => saveLearningDataSmart(false), 1500);
+      }
     }
-    
-    return false;
-    
-  } finally {
-    setIsSaving(false);
-    
-    // 检查是否有待保存的操作
-    if (pendingSave) {
-      setPendingSave(false);
-      console.log('🔄 执行待保存操作');
-      setTimeout(() => saveLearningDataSmart(false), 1500);
-    }
-  }
-};
+  };
   
-  // 预设GitHub配置 - 针对 Misaki-15/cosmetics-analyzer-learning 仓库
+  // 公共学习库配置 - 面向所有用户
+  const PUBLIC_LEARNING_CONFIG = {
+    owner: 'Misaki-15',
+    repo: 'cosmetics-analyzer-public-learning',
+    token: process.env.REACT_APP_PUBLIC_GITHUB_TOKEN || 'ghp_your_public_token_here',
+    branch: 'main',
+    filePath: 'public-learning-data.json',
+    name: '公共学习库',
+    description: '所有用户共享的学习数据库'
+  };
+  
+  // 个人GitHub配置 - 保持向后兼容
   const PRESET_GITHUB_CONFIG = {
     owner: process.env.REACT_APP_GITHUB_OWNER || 'Misaki-15',
     repo: process.env.REACT_APP_GITHUB_REPO || 'cosmetics-analyzer-learning',
     token: process.env.REACT_APP_GITHUB_TOKEN,
-    branch: 'main', // 默认分支
-    filePath: 'learning-data.json', // 单一数据文件
-    autoEnable: true // 如果有token就自动启用
+    branch: 'main',
+    filePath: 'learning-data.json',
+    autoEnable: false // 默认不自动启用个人库
   };
   
   // GitHub 存储相关状态
   const [githubConfig, setGithubConfig] = useState(() => {
-    // 自动初始化GitHub配置
-    if (PRESET_GITHUB_CONFIG.autoEnable && PRESET_GITHUB_CONFIG.token) {
-      return {
-        token: PRESET_GITHUB_CONFIG.token,
-        owner: PRESET_GITHUB_CONFIG.owner,
-        repo: PRESET_GITHUB_CONFIG.repo,
-        enabled: true // 自动启用
-      };
-    }
+    // 默认不启用个人配置
     return {
       token: '',
       owner: '',
@@ -168,8 +183,179 @@ const SmartClaimsAnalyzer = () => {
   const [syncStatus, setSyncStatus] = useState('idle'); // idle, syncing, success, error
   const [showGithubConfig, setShowGithubConfig] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState(null);
+  const [publicSyncStatus, setPublicSyncStatus] = useState('idle'); // 公共库同步状态
+  const [lastPublicSyncTime, setLastPublicSyncTime] = useState(null);
 
-  // GitHub API 相关函数
+  // 公共学习库相关函数
+  const loadDataFromPublicLibrary = async () => {
+    try {
+      setPublicSyncStatus('syncing');
+      console.log('🌐 从公共学习库加载数据...');
+      
+      const response = await fetch(
+        `https://api.github.com/repos/${PUBLIC_LEARNING_CONFIG.owner}/${PUBLIC_LEARNING_CONFIG.repo}/contents/${PUBLIC_LEARNING_CONFIG.filePath}`,
+        {
+          headers: {
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'Cosmetics-Analyzer-Public'
+          }
+        }
+      );
+
+      if (response.ok) {
+        const fileData = await response.json();
+        const content = decodeURIComponent(escape(atob(fileData.content.replace(/\n/g, ''))));
+        const data = JSON.parse(content);
+        setPublicSyncStatus('success');
+        setLastPublicSyncTime(new Date());
+        console.log('✅ 公共学习库数据加载成功');
+        return data;
+      } else if (response.status === 404) {
+        console.log('📝 公共学习库文件不存在，将创建新文件');
+        setPublicSyncStatus('success');
+        return null;
+      } else {
+        throw new Error(`GitHub API 错误: ${response.status}`);
+      }
+    } catch (error) {
+      console.error('❌ 从公共学习库加载数据失败:', error);
+      setPublicSyncStatus('error');
+      setValidationMessage({
+        type: 'warning',
+        message: `⚠️ 公共学习库连接失败: ${error.message}，将使用离线模式`
+      });
+      setTimeout(() => {
+        setValidationMessage({ type: '', message: '' });
+      }, 5000);
+      return null;
+    }
+  };
+
+  const saveToPublicLibrary = async (dataToSave) => {
+    try {
+      setPublicSyncStatus('syncing');
+      console.log('🌐 保存数据到公共学习库...');
+      
+      // 添加公共贡献标识
+      const publicData = {
+        ...dataToSave,
+        lastPublicUpdate: new Date().toISOString(),
+        publicContributions: (dataToSave.publicContributions || 0) + 1,
+        contributor: 'anonymous', // 匿名贡献
+        syncSource: 'public-web-app'
+      };
+      
+      // 先尝试获取当前文件的 SHA
+      let sha = null;
+      try {
+        const currentFile = await fetch(
+          `https://api.github.com/repos/${PUBLIC_LEARNING_CONFIG.owner}/${PUBLIC_LEARNING_CONFIG.repo}/contents/${PUBLIC_LEARNING_CONFIG.filePath}`,
+          {
+            headers: {
+              'Accept': 'application/vnd.github.v3+json'
+            }
+          }
+        );
+        if (currentFile.ok) {
+          const fileData = await currentFile.json();
+          sha = fileData.sha;
+        }
+      } catch (e) {
+        console.log('首次创建公共学习库文件');
+      }
+
+      // 保存到公共学习库（这里需要一个有写权限的 token）
+      const content = btoa(unescape(encodeURIComponent(JSON.stringify(publicData, null, 2))));
+      
+      const response = await fetch(
+        `https://api.github.com/repos/${PUBLIC_LEARNING_CONFIG.owner}/${PUBLIC_LEARNING_CONFIG.repo}/contents/${PUBLIC_LEARNING_CONFIG.filePath}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `token ${PUBLIC_LEARNING_CONFIG.token}`,
+            'Content-Type': 'application/json',
+            'User-Agent': 'Cosmetics-Analyzer-Public'
+          },
+          body: JSON.stringify({
+            message: `🌐 公共学习库更新 - ${new Date().toLocaleString('zh-CN')}`,
+            content: content,
+            ...(sha && { sha })
+          })
+        }
+      );
+
+      if (response.ok) {
+        setPublicSyncStatus('success');
+        setLastPublicSyncTime(new Date());
+        console.log('✅ 公共学习库保存成功');
+        return true;
+      } else {
+        throw new Error(`保存失败: ${response.status}`);
+      }
+    } catch (error) {
+      console.error('❌ 保存到公共学习库失败:', error);
+      setPublicSyncStatus('error');
+      
+      // 对于公共库，显示更友好的错误信息
+      if (error.message.includes('409')) {
+        setValidationMessage({
+          type: 'info',
+          message: '🔄 检测到其他用户同时在学习，稍后会自动重试保存...'
+        });
+      } else {
+        setValidationMessage({
+          type: 'warning',
+          message: `⚠️ 公共学习库暂时无法保存: ${error.message}，数据已保存到本地`
+        });
+      }
+      
+      setTimeout(() => {
+        setValidationMessage({ type: '', message: '' });
+      }, 5000);
+      return false;
+    }
+  };
+
+  // 学习模式切换
+  const switchLearningMode = async (mode) => {
+    setLearningMode(mode);
+    
+    if (mode === 'public') {
+      // 切换到公共学习库
+      console.log('🌐 切换到公共学习库模式');
+      const publicData = await loadDataFromPublicLibrary();
+      if (publicData) {
+        setLearningData(prev => ({
+          ...loadInitialData(),
+          ...publicData,
+          lastUpdated: new Date().toISOString()
+        }));
+        setValidationMessage({
+          type: 'success',
+          message: '🌐 已切换到公共学习库！现在您的学习将与所有用户共享'
+        });
+      } else {
+        setValidationMessage({
+          type: 'info',
+          message: '🌐 已切换到公共学习库模式，将创建新的公共学习数据'
+        });
+      }
+    } else {
+      // 切换到个人学习库
+      console.log('👤 切换到个人学习库模式');
+      setLearningData(loadInitialData());
+      setValidationMessage({
+        type: 'info',
+        message: '👤 已切换到个人学习库模式，请配置您的GitHub设置'
+      });
+    }
+    
+    setTimeout(() => {
+      setValidationMessage({ type: '', message: '' });
+    }, 5000);
+  };
+
+  // GitHub API 相关函数（个人库）
   const loadDataFromGitHub = async () => {
     if (!githubConfig.enabled || !githubConfig.token || !githubConfig.owner || !githubConfig.repo) {
       return null;
@@ -189,14 +375,12 @@ const SmartClaimsAnalyzer = () => {
 
       if (response.ok) {
         const fileData = await response.json();
-        // base64 解码并支持中文
         const content = decodeURIComponent(escape(atob(fileData.content.replace(/\n/g, ''))));
         const data = JSON.parse(content);
         setSyncStatus('success');
         setLastSyncTime(new Date());
         return data;
       } else if (response.status === 404) {
-        // 文件不存在，这是正常情况（首次使用）
         setSyncStatus('success');
         return null;
       } else {
@@ -224,7 +408,6 @@ const SmartClaimsAnalyzer = () => {
     try {
       setSyncStatus('syncing');
       
-      // 先获取文件的 SHA (如果存在)
       let sha = null;
       try {
         const currentFile = await fetch(
@@ -243,14 +426,12 @@ const SmartClaimsAnalyzer = () => {
         // 文件不存在，首次创建
       }
 
-      // 准备要保存的数据
       const finalData = {
         ...dataToSave,
         lastSyncTime: new Date().toISOString(),
-        syncSource: 'web-app'
+        syncSource: 'personal-web-app'
       };
 
-      // 保存/更新文件
       const content = btoa(unescape(encodeURIComponent(JSON.stringify(finalData, null, 2))));
       
       const response = await fetch(
@@ -262,9 +443,9 @@ const SmartClaimsAnalyzer = () => {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            message: `🧠 更新学习数据 - ${new Date().toLocaleString('zh-CN')}`,
+            message: `🧠 更新个人学习数据 - ${new Date().toLocaleString('zh-CN')}`,
             content: content,
-            ...(sha && { sha }) // 如果文件存在，需要提供 SHA
+            ...(sha && { sha })
           })
         }
       );
@@ -318,7 +499,7 @@ const SmartClaimsAnalyzer = () => {
         setSyncStatus('success');
         setValidationMessage({
           type: 'success',
-          message: '✅ GitHub 连接测试成功！可以启用云端同步了'
+          message: '✅ GitHub 连接测试成功！可以启用个人云端同步了'
         });
         setTimeout(() => {
           setValidationMessage({ type: '', message: '' });
@@ -339,53 +520,50 @@ const SmartClaimsAnalyzer = () => {
     }
   };
 
-  // 组件启动时自动初始化GitHub连接
+  // 组件启动时自动初始化公共学习库
   useEffect(() => {
-    const initializeGitHub = async () => {
-      if (githubConfig.enabled && githubConfig.token) {
-        console.log('🚀 自动初始化GitHub连接: Misaki-15/cosmetics-analyzer-learning');
-        
-        // 尝试加载已有的学习数据
-        try {
-          setSyncStatus('syncing');
-          const data = await loadDataFromGitHub();
-          if (data) {
-            setLearningData(prev => ({
-              ...loadInitialData(),
-              ...data,
-              lastUpdated: new Date().toISOString()
-            }));
-            console.log('✅ 成功加载GitHub学习数据');
-            setValidationMessage({
-              type: 'success',
-              message: '🚀 已自动连接GitHub云存储并加载学习数据！'
-            });
-          } else {
-            console.log('📝 GitHub仓库为空，将创建新的学习数据文件');
-            setValidationMessage({
-              type: 'info',
-              message: '☁️ 已连接GitHub云存储，准备创建学习数据文件...'
-            });
-          }
-          setSyncStatus('success');
-          setLastSyncTime(new Date());
-        } catch (error) {
-          console.error('GitHub初始化失败:', error);
-          setSyncStatus('error');
+    const initializePublicLibrary = async () => {
+      console.log('🚀 自动初始化公共学习库');
+      
+      try {
+        setPublicSyncStatus('syncing');
+        const publicData = await loadDataFromPublicLibrary();
+        if (publicData) {
+          setLearningData(prev => ({
+            ...loadInitialData(),
+            ...publicData,
+            lastUpdated: new Date().toISOString()
+          }));
+          console.log('✅ 成功加载公共学习库数据');
           setValidationMessage({
-            type: 'error',
-            message: '❌ GitHub自动连接失败，请检查配置'
+            type: 'success',
+            message: '🌐 已自动连接公共学习库！您的学习将与所有用户共享，共同提升AI准确性'
+          });
+        } else {
+          console.log('📝 公共学习库为空，准备创建新数据');
+          setValidationMessage({
+            type: 'info',
+            message: '🌐 已连接公共学习库，准备创建共享学习数据...'
           });
         }
-        
-        setTimeout(() => {
-          setValidationMessage({ type: '', message: '' });
-        }, 5000);
+        setPublicSyncStatus('success');
+        setLastPublicSyncTime(new Date());
+      } catch (error) {
+        console.error('公共学习库初始化失败:', error);
+        setPublicSyncStatus('error');
+        setValidationMessage({
+          type: 'warning',
+          message: '⚠️ 公共学习库连接失败，将使用离线模式。您的学习数据将保存在本地'
+        });
       }
+      
+      setTimeout(() => {
+        setValidationMessage({ type: '', message: '' });
+      }, 6000);
     };
 
-    initializeGitHub();
-  }, []); // 只在组件挂载时执行一次
+    initializePublicLibrary();
+  }, []);
 
   // 改进的自动保存逻辑 - 防抖 + 状态检查
   useEffect(() => {
@@ -411,7 +589,7 @@ const SmartClaimsAnalyzer = () => {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [saveQueue, autoSaveEnabled, isSaving, learningData]);
+  }, [saveQueue, autoSaveEnabled, isSaving, learningData, learningMode]);
 
   // 监听学习数据变化
   useEffect(() => {
@@ -431,12 +609,14 @@ const SmartClaimsAnalyzer = () => {
       setLearningData(updatedData);
       setLastSaveTime(new Date());
       
-      // 如果启用了 GitHub，同时保存到云端
-      if (githubConfig.enabled) {
+      // 根据学习模式保存
+      if (learningMode === 'public') {
+        await saveToPublicLibrary(updatedData);
+      } else if (githubConfig.enabled) {
         await saveDataToGitHub(updatedData);
       }
       
-      console.log('Learning data saved to memory');
+      console.log('Learning data saved');
     } catch (error) {
       console.error('Error saving data:', error);
       setValidationMessage({
@@ -455,6 +635,7 @@ const SmartClaimsAnalyzer = () => {
     const dataToExport = {
       ...learningData,
       exportDate: new Date().toISOString(),
+      exportMode: learningMode,
       baseKeywordMapping: baseKeywordMapping
     };
     
@@ -465,7 +646,7 @@ const SmartClaimsAnalyzer = () => {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `化妆品宣称分析器学习数据_${new Date().toISOString().split('T')[0]}.json`;
+      link.download = `化妆品宣称分析器学习数据_${learningMode}_${new Date().toISOString().split('T')[0]}.json`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -526,7 +707,7 @@ const SmartClaimsAnalyzer = () => {
             userCorrections: [...(learningData.userCorrections || []), ...(imported.userCorrections || [])],
             keywordFrequency: { ...learningData.keywordFrequency, ...imported.keywordFrequency },
             lastUpdated: new Date().toISOString(),
-            version: '2.4-Misaki15'
+            version: '2.4-Misaki15-Public'
           };
           
           setLearningData(mergedData);
@@ -787,7 +968,7 @@ const SmartClaimsAnalyzer = () => {
   // 根据选择的品类筛选功效选项
   const getFilteredDimension1Options = () => {
     if (!selectedProductCategory) {
-      return dimension1Options; // 未选择品类时显示全部
+      return dimension1Options;
     }
     
     const category = productCategories.find(cat => cat.value === selectedProductCategory);
@@ -883,7 +1064,7 @@ const SmartClaimsAnalyzer = () => {
     // 获取适用的功效列表
     const applicableEfficacies = selectedProductCategory 
       ? productCategories.find(cat => cat.value === selectedProductCategory)?.applicableEfficacies || []
-      : dimension1Options.map(opt => opt.value); // 未选择品类时使用全部功效
+      : dimension1Options.map(opt => opt.value);
 
     // 分析维度一（功效）- 根据品类筛选
     const efficacyEntries = Object.entries(baseKeywordMapping.功效);
@@ -1140,7 +1321,7 @@ const SmartClaimsAnalyzer = () => {
 
     setValidationMessage({
       type: 'success',
-      message: `✅ 已确认分析正确！AI学习了这次成功的匹配模式`
+      message: `✅ 已确认分析正确！AI学习了这次成功的匹配模式${learningMode === 'public' ? '（已贡献到公共学习库）' : ''}`
     });
 
     setTimeout(() => {
@@ -1196,7 +1377,8 @@ const SmartClaimsAnalyzer = () => {
       userKeyword: userKeyword.trim(),
       correctionType: correctionType,
       timestamp: new Date().toISOString(),
-      confidence: result.confidence[dimension]
+      confidence: result.confidence[dimension],
+      learningMode: learningMode
     };
 
     setLearningData(prev => {
@@ -1264,7 +1446,7 @@ const SmartClaimsAnalyzer = () => {
                               correctionType === 'add' ? '增加新编码' : '替换编码';
     setValidationMessage({
       type: 'success',
-      message: `✅ ${correctionTypeText}成功！${userKeyword.trim() ? '新关键词已学习' : ''}继续选择其他纠错方式或点击保存确认`
+      message: `✅ ${correctionTypeText}成功！${userKeyword.trim() ? '新关键词已学习' : ''}继续选择其他纠错方式或点击保存确认${learningMode === 'public' ? '（将贡献到公共学习库）' : ''}`
     });
 
     // 不自动退出编辑模式，支持多步操作
@@ -1299,7 +1481,7 @@ const SmartClaimsAnalyzer = () => {
     
     setValidationMessage({
       type: 'success',
-      message: `✅ 编码修改已保存确认！AI已学习此次纠错的完整过程`
+      message: `✅ 编码修改已保存确认！AI已学习此次纠错的完整过程${learningMode === 'public' ? '（已贡献到公共学习库）' : ''}`
     });
 
     setTimeout(() => {
@@ -1375,7 +1557,7 @@ const SmartClaimsAnalyzer = () => {
         type: 'success',
         message: `✅ 成功添加关键词 "${keyword}" 到 ${efficacy}${
           wasInBlacklist ? ' (已从删除记录中恢复)' : ''
-        }`
+        }${learningMode === 'public' ? ' 并贡献到公共学习库' : ''}`
       });
     
       // 8. 保存更新后的数据
@@ -1405,13 +1587,14 @@ const SmartClaimsAnalyzer = () => {
     }
   };
 
-  // 智能分析处理函数
+  // 智能分析主函数
   const handleAutoAnalysis = () => {
     if (!inputText.trim()) {
       setValidationMessage({
         type: 'error',
-        message: '❌ 请输入要分析的宣称内容'
+        message: '❌ 请输入宣称内容'
       });
+      
       setTimeout(() => {
         setValidationMessage({ type: '', message: '' });
       }, 3000);
@@ -1438,7 +1621,8 @@ const SmartClaimsAnalyzer = () => {
         text: line.trim(),
         ...analysis,
         timestamp: new Date().toLocaleString(),
-        productCategory: selectedProductCategory // 保存分析时的品类信息
+        productCategory: selectedProductCategory,
+        learningMode: learningMode
       };
     });
 
@@ -1448,9 +1632,11 @@ const SmartClaimsAnalyzer = () => {
       ? productCategories.find(cat => cat.value === selectedProductCategory)?.label 
       : '全功效模式';
     
+    const modeText = learningMode === 'public' ? '公共学习库' : '个人学习库';
+    
     setValidationMessage({
       type: 'success',
-      message: `✅ 分析完成！共处理 ${results.length} 条宣称（${categoryText}）`
+      message: `✅ 分析完成！共处理 ${results.length} 条宣称（${categoryText}，${modeText}）`
     });
     
     setTimeout(() => {
@@ -1498,6 +1684,7 @@ const SmartClaimsAnalyzer = () => {
         <Cell><Data ss:Type="String">维度二：类型</Data></Cell>
         <Cell><Data ss:Type="String">维度三：持续性</Data></Cell>
         <Cell><Data ss:Type="String">置信度</Data></Cell>
+        <Cell><Data ss:Type="String">学习模式</Data></Cell>
         <Cell><Data ss:Type="String">分析时间</Data></Cell>
       </Row>
       ${analysisResults.map((result, index) => 
@@ -1508,6 +1695,7 @@ const SmartClaimsAnalyzer = () => {
           <Cell><Data ss:Type="String">${Array.isArray(result.dimension2) ? result.dimension2.join(', ') : result.dimension2}</Data></Cell>
           <Cell><Data ss:Type="String">${result.dimension3}</Data></Cell>
           <Cell><Data ss:Type="String">${Math.round(result.confidence.dimension1 * 100)}%</Data></Cell>
+          <Cell><Data ss:Type="String">${result.learningMode === 'public' ? '公共学习库' : '个人学习库'}</Data></Cell>
           <Cell><Data ss:Type="String">${result.timestamp}</Data></Cell>
         </Row>`
       ).join('')}
@@ -1515,6 +1703,10 @@ const SmartClaimsAnalyzer = () => {
       <Row ss:StyleID="header">
         <Cell><Data ss:Type="String">学习统计</Data></Cell>
         <Cell><Data ss:Type="String">数值</Data></Cell>
+      </Row>
+      <Row>
+        <Cell><Data ss:Type="String">学习模式</Data></Cell>
+        <Cell><Data ss:Type="String">${learningMode === 'public' ? '公共学习库' : '个人学习库'}</Data></Cell>
       </Row>
       <Row>
         <Cell><Data ss:Type="String">用户纠正次数</Data></Cell>
@@ -1529,6 +1721,10 @@ const SmartClaimsAnalyzer = () => {
       <Row>
         <Cell><Data ss:Type="String">当前准确率</Data></Cell>
         <Cell><Data ss:Type="String">${learningData.learningStats?.accuracyRate || 100}%</Data></Cell>
+      </Row>
+      <Row>
+        <Cell><Data ss:Type="String">公共贡献次数</Data></Cell>
+        <Cell><Data ss:Type="Number">${learningData.learningStats?.publicContributions || 0}</Data></Cell>
       </Row>
       <Row>
         <Cell><Data ss:Type="String">报告生成时间</Data></Cell>
@@ -1566,7 +1762,7 @@ const SmartClaimsAnalyzer = () => {
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `智能化妆品宣称分析报告_${new Date().toISOString().split('T')[0]}.xls`;
+        link.download = `智能化妆品宣称分析报告_${learningMode}_${new Date().toISOString().split('T')[0]}.xls`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -1581,7 +1777,7 @@ const SmartClaimsAnalyzer = () => {
         console.error('Excel下载失败，尝试CSV格式:', downloadError);
         
         // 备选方案：生成CSV格式
-        const headers = ['序号', '宣称内容', '维度一：功效', '维度二：类型', '维度三：持续性', '置信度', '分析时间'];
+        const headers = ['序号', '宣称内容', '维度一：功效', '维度二：类型', '维度三：持续性', '置信度', '学习模式', '分析时间'];
         const csvRows = [
           headers.join(','),
           ...analysisResults.map((result, index) => {
@@ -1592,16 +1788,19 @@ const SmartClaimsAnalyzer = () => {
               `"${Array.isArray(result.dimension2) ? result.dimension2.join(', ') : result.dimension2}"`,
               result.dimension3,
               `${Math.round(result.confidence.dimension1 * 100)}%`,
+              result.learningMode === 'public' ? '公共学习库' : '个人学习库',
               result.timestamp
             ].join(',');
           }),
           '', // 空行
           '=== 学习统计 ===',
+          `学习模式,${learningMode === 'public' ? '公共学习库' : '个人学习库'}`,
           `用户纠正次数,${learningData.userCorrections?.length || 0}`,
           `新学习关键词,${Object.values(learningData.newKeywords).reduce((total, category) => 
             total + Object.values(category).reduce((sum, keywords) => sum + keywords.length, 0), 0
           )}`,
           `当前准确率,${learningData.learningStats?.accuracyRate || 100}%`,
+          `公共贡献次数,${learningData.learningStats?.publicContributions || 0}`,
           `报告生成时间,${new Date().toLocaleString()}`
         ];
 
@@ -1616,7 +1815,7 @@ const SmartClaimsAnalyzer = () => {
         const csvUrl = URL.createObjectURL(csvBlob);
         const csvLink = document.createElement('a');
         csvLink.href = csvUrl;
-        csvLink.download = `智能化妆品宣称分析报告_${new Date().toISOString().split('T')[0]}.csv`;
+        csvLink.download = `智能化妆品宣称分析报告_${learningMode}_${new Date().toISOString().split('T')[0]}.csv`;
         document.body.appendChild(csvLink);
         csvLink.click();
         document.body.removeChild(csvLink);
@@ -1636,7 +1835,7 @@ const SmartClaimsAnalyzer = () => {
       console.error('Export error:', error);
       
       // 最后的备选方案：显示模态框让用户复制
-      const headers = ['序号', '宣称内容', '维度一：功效', '维度二：类型', '维度三：持续性', '置信度', '分析时间'];
+      const headers = ['序号', '宣称内容', '维度一：功效', '维度二：类型', '维度三：持续性', '置信度', '学习模式', '分析时间'];
       const csvRows = [
         headers.join('\t'), // 使用制表符分隔，便于粘贴到Excel
         ...analysisResults.map((result, index) => {
@@ -1647,16 +1846,19 @@ const SmartClaimsAnalyzer = () => {
             Array.isArray(result.dimension2) ? result.dimension2.join(', ') : result.dimension2,
             result.dimension3,
             `${Math.round(result.confidence.dimension1 * 100)}%`,
+            result.learningMode === 'public' ? '公共学习库' : '个人学习库',
             result.timestamp
           ].join('\t');
         }),
         '', // 空行
         '=== 学习统计 ===',
+        `学习模式\t${learningMode === 'public' ? '公共学习库' : '个人学习库'}`,
         `用户纠正次数\t${learningData.userCorrections?.length || 0}`,
         `新学习关键词\t${Object.values(learningData.newKeywords).reduce((total, category) => 
           total + Object.values(category).reduce((sum, keywords) => sum + keywords.length, 0), 0
         )}`,
         `当前准确率\t${learningData.learningStats?.accuracyRate || 100}%`,
+        `公共贡献次数\t${learningData.learningStats?.publicContributions || 0}`,
         `报告生成时间\t${new Date().toLocaleString()}`
       ];
       
@@ -1730,43 +1932,118 @@ const SmartClaimsAnalyzer = () => {
           <div className="text-center mb-6">
             <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent mb-4 flex items-center justify-center gap-3">
               <Brain className="text-blue-600 h-10 w-10" />
-              智能学习型化妆品宣称分析器 v2.4-Misaki15
-              <Sparkles className="text-purple-600 h-10 w-10" />
+              智能学习型化妆品宣称分析器 v2.4-Misaki15-Public
+              <Globe className="text-green-600 h-10 w-10" />
             </h1>
             <p className="text-lg text-gray-600 max-w-3xl mx-auto leading-relaxed">
-              🧠 AI自我学习优化 | 💡 多功效智能识别 | 📊 置信度评估 | 🎯 用户纠错学习 | 💾 内存存储 | ✅ Excel/CSV双格式导出 | 🔧 两步分析法 | 🐙 GitHub云存储 | 🏷️ 品类智能筛选
+              🧠 AI自我学习优化 | 💡 多功效智能识别 | 📊 置信度评估 | 🎯 用户纠错学习 | 🌐 公共学习库 | ✅ Excel/CSV双格式导出 | 🔧 两步分析法 | 🏷️ 品类智能筛选
               <br />
               <span className="text-sm text-blue-600 font-medium">
                 🎯 新版采用两步分析法：先基础库分析，再学习库增强，确保稳定性和准确性！
                 <br />
-                ☁️ 支持GitHub云端存储，学习数据永久保存，多设备同步！
+                🌐 <strong>全新公共学习库</strong>：所有用户共同学习，集体智慧共同提升AI准确性！
                 <br />
-                🏷️ 新增品类选择功能：根据产品类型智能筛选适用功效，提升分析精准度！
+                🏷️ 品类选择功能：根据产品类型智能筛选适用功效，提升分析精准度！
                 <br />
-                📊 Excel导出功能完整修复：支持真正的Excel文件下载，同时提供CSV备选方案！
+                📊 Excel导出功能：支持真正的Excel文件下载，同时提供CSV备选方案！
               </span>
             </p>
-            {githubConfig.enabled && lastSyncTime && (
-              <p className="text-sm text-gray-500 mt-2">
-                最后保存时间: {lastSaveTime?.toLocaleString()}
-                <span className="ml-4 flex items-center gap-1">
-                  GitHub同步: {lastSyncTime.toLocaleString()}
-                  {syncStatus === 'success' && <CheckCircle size={16} className="text-green-600" />}
-                  {syncStatus === 'error' && <XCircle size={16} className="text-red-600" />}
-                  {syncStatus === 'syncing' && <Wifi size={16} className="text-blue-600 animate-pulse" />}
-                </span>
-              </p>
-            )}
-            {!githubConfig.enabled && lastSaveTime && (
-              <p className="text-sm text-gray-500 mt-2">
-                最后保存时间: {lastSaveTime.toLocaleString()}
-                {learningData.learningStats && (
-                  <span className="ml-4">
-                    当前准确率: <span className="font-bold text-green-600">{learningData.learningStats.accuracyRate}%</span>
+            
+            {/* 学习模式状态显示 */}
+            <div className="mt-4 p-4 bg-gradient-to-r from-blue-50 to-green-50 rounded-xl">
+              <div className="flex items-center justify-center gap-6">
+                <div className="flex items-center gap-2">
+                  <div className={`w-3 h-3 rounded-full ${learningMode === 'public' ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                  <span className="text-sm font-medium">
+                    当前模式: <span className={`font-bold ${learningMode === 'public' ? 'text-green-600' : 'text-blue-600'}`}>
+                      {learningMode === 'public' ? '🌐 公共学习库' : '👤 个人学习库'}
+                    </span>
                   </span>
+                </div>
+                {learningMode === 'public' && publicSyncStatus && (
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 text-sm">
+                      {publicSyncStatus === 'syncing' && <Wifi className="animate-pulse text-blue-600" size={16} />}
+                      {publicSyncStatus === 'success' && <Cloud className="text-green-600" size={16} />}
+                      {publicSyncStatus === 'error' && <WifiOff className="text-red-600" size={16} />}
+                      <span className="text-gray-600">
+                        公共库同步: {lastPublicSyncTime?.toLocaleString() || '未连接'}
+                      </span>
+                    </div>
+                  </div>
                 )}
-              </p>
-            )}
+                {learningMode === 'personal' && githubConfig.enabled && lastSyncTime && (
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 text-sm">
+                      {syncStatus === 'syncing' && <Wifi className="animate-pulse text-blue-600" size={16} />}
+                      {syncStatus === 'success' && <CheckCircle className="text-green-600" size={16} />}
+                      {syncStatus === 'error' && <XCircle className="text-red-600" size={16} />}
+                      <span className="text-gray-600">
+                        个人库同步: {lastSyncTime.toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* 学习模式切换 */}
+          <div className="flex justify-center mb-6">
+            <div className="bg-white rounded-xl p-2 shadow-lg border border-gray-200">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => switchLearningMode('public')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
+                    learningMode === 'public' 
+                      ? 'bg-gradient-to-r from-green-500 to-blue-500 text-white shadow-md' 
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  <Globe size={18} />
+                  公共学习库
+                  <span className="text-xs bg-white/20 px-2 py-1 rounded">
+                    {learningMode === 'public' ? '当前' : '切换'}
+                  </span>
+                </button>
+                <button
+                  onClick={() => switchLearningMode('personal')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
+                    learningMode === 'personal' 
+                      ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white shadow-md' 
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  <User size={18} />
+                  个人学习库
+                  <span className="text-xs bg-white/20 px-2 py-1 rounded">
+                    {learningMode === 'personal' ? '当前' : '切换'}
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* 模式说明 */}
+          <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-green-50 rounded-xl">
+            <div className="text-center">
+              <div className="font-bold text-gray-800 mb-2">
+                {learningMode === 'public' ? '🌐 公共学习库模式' : '👤 个人学习库模式'}
+              </div>
+              <div className="text-sm text-gray-700">
+                {learningMode === 'public' ? (
+                  <div>
+                    <p>所有用户共同学习，您的每次纠错和新增关键词都会贡献给全球用户</p>
+                    <p className="mt-1 text-green-600 font-medium">✨ 集体智慧，共同提升AI准确性！</p>
+                  </div>
+                ) : (
+                  <div>
+                    <p>您的学习数据保存在个人GitHub仓库中，完全私有</p>
+                    <p className="mt-1 text-blue-600 font-medium">🔒 个人专属，数据完全掌控！</p>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* 数据管理按钮 */}
@@ -1795,22 +2072,24 @@ const SmartClaimsAnalyzer = () => {
                 className="hidden"
               />
             </label>
-            <button
-              onClick={() => setShowGithubConfig(!showGithubConfig)}
-              className={`flex items-center gap-2 ${
-                githubConfig.enabled ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-600 hover:bg-gray-700'
-              } text-white px-4 py-2 rounded-lg transition-colors text-sm`}
-            >
-              <Github size={16} />
-              GitHub云存储
-              {githubConfig.enabled && (
-                <div className="flex items-center gap-1">
-                  {syncStatus === 'syncing' && <Wifi className="animate-pulse" size={12} />}
-                  {syncStatus === 'success' && <Cloud size={12} />}
-                  {syncStatus === 'error' && <WifiOff size={12} />}
-                </div>
-              )}
-            </button>
+            {learningMode === 'personal' && (
+              <button
+                onClick={() => setShowGithubConfig(!showGithubConfig)}
+                className={`flex items-center gap-2 ${
+                  githubConfig.enabled ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-600 hover:bg-gray-700'
+                } text-white px-4 py-2 rounded-lg transition-colors text-sm`}
+              >
+                <Github size={16} />
+                个人GitHub
+                {githubConfig.enabled && (
+                  <div className="flex items-center gap-1">
+                    {syncStatus === 'syncing' && <Wifi className="animate-pulse" size={12} />}
+                    {syncStatus === 'success' && <Cloud size={12} />}
+                    {syncStatus === 'error' && <WifiOff size={12} />}
+                  </div>
+                )}
+              </button>
+            )}
             <button
               onClick={clearLearningData}
               className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors text-sm"
@@ -1829,34 +2108,18 @@ const SmartClaimsAnalyzer = () => {
             </label>
           </div>
 
-          {/* GitHub 配置面板 */}
-          {showGithubConfig && (
+          {/* GitHub 配置面板 (只在个人模式下显示) */}
+          {learningMode === 'personal' && showGithubConfig && (
             <div className="mb-6 bg-gradient-to-br from-gray-50 to-blue-50 p-6 rounded-xl border border-gray-200">
               <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
                 <Github className="text-gray-600" />
-                GitHub 云端存储配置
+                个人GitHub配置
                 <span className={`px-2 py-1 rounded text-xs font-medium ${
                   githubConfig.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
                 }`}>
-                  {githubConfig.enabled ? '自动连接中' : '未连接'}
+                  {githubConfig.enabled ? '已连接' : '未连接'}
                 </span>
               </h3>
-              
-              {/* 预设配置信息 */}
-              {PRESET_GITHUB_CONFIG.autoEnable && (
-                <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-                  <div className="font-semibold text-blue-800 mb-2">🚀 预设自动配置（Vercel部署）</div>
-                  <div className="text-sm text-blue-700 space-y-1">
-                    <div>目标仓库: <code className="bg-white px-1 rounded">Misaki-15/cosmetics-analyzer-learning</code></div>
-                    <div>数据文件: <code className="bg-white px-1 rounded">learning-data.json</code></div>
-                    <div>部署平台: <strong>Vercel</strong></div>
-                    <div>连接状态: {githubConfig.enabled ? 
-                      <span className="text-green-600 font-medium">✅ 已自动连接</span> : 
-                      <span className="text-orange-600 font-medium">⏳ 等待Vercel环境变量配置</span>
-                    }</div>
-                  </div>
-                </div>
-              )}
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div>
@@ -1869,11 +2132,7 @@ const SmartClaimsAnalyzer = () => {
                     onChange={(e) => setGithubConfig(prev => ({ ...prev, owner: e.target.value }))}
                     placeholder="your-username"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-                    disabled={githubConfig.enabled && PRESET_GITHUB_CONFIG.autoEnable}
                   />
-                  {githubConfig.enabled && PRESET_GITHUB_CONFIG.autoEnable && (
-                    <div className="text-xs text-green-600 mt-1">已通过预设配置自动填入</div>
-                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1883,13 +2142,9 @@ const SmartClaimsAnalyzer = () => {
                     type="text"
                     value={githubConfig.repo}
                     onChange={(e) => setGithubConfig(prev => ({ ...prev, repo: e.target.value }))}
-                    placeholder="cosmetics-analyzer-learning"
+                    placeholder="my-learning-repo"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-                    disabled={githubConfig.enabled && PRESET_GITHUB_CONFIG.autoEnable}
                   />
-                  {githubConfig.enabled && PRESET_GITHUB_CONFIG.autoEnable && (
-                    <div className="text-xs text-green-600 mt-1">已通过预设配置自动填入</div>
-                  )}
                 </div>
               </div>
               
@@ -1911,17 +2166,13 @@ const SmartClaimsAnalyzer = () => {
                   onChange={(e) => setGithubConfig(prev => ({ ...prev, token: e.target.value }))}
                   placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-                  disabled={githubConfig.enabled && PRESET_GITHUB_CONFIG.autoEnable}
                 />
-                {githubConfig.enabled && PRESET_GITHUB_CONFIG.autoEnable && (
-                  <div className="text-xs text-green-600 mt-1">已通过环境变量自动配置</div>
-                )}
               </div>
 
               <div className="flex flex-wrap gap-3 items-center">
                 <button
                   onClick={testGitHubConnection}
-                  disabled={syncStatus === 'syncing' || (githubConfig.enabled && PRESET_GITHUB_CONFIG.autoEnable)}
+                  disabled={syncStatus === 'syncing'}
                   className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm disabled:opacity-50"
                 >
                   {syncStatus === 'syncing' ? (
@@ -1929,32 +2180,30 @@ const SmartClaimsAnalyzer = () => {
                   ) : (
                     <Github size={16} />
                   )}
-                  {githubConfig.enabled && PRESET_GITHUB_CONFIG.autoEnable ? '已自动连接' : '测试连接'}
+                  测试连接
                 </button>
                 
-                {!PRESET_GITHUB_CONFIG.autoEnable && (
-                  <button
-                    onClick={() => setGithubConfig(prev => ({ ...prev, enabled: !prev.enabled }))}
-                    disabled={!githubConfig.token || !githubConfig.owner || !githubConfig.repo}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors text-sm disabled:opacity-50 ${
-                      githubConfig.enabled 
-                        ? 'bg-red-600 text-white hover:bg-red-700' 
-                        : 'bg-green-600 text-white hover:bg-green-700'
-                    }`}
-                  >
-                    {githubConfig.enabled ? (
-                      <>
-                        <WifiOff size={16} />
-                        禁用云存储
-                      </>
-                    ) : (
-                      <>
-                        <Cloud size={16} />
-                        启用云存储
-                      </>
-                    )}
-                  </button>
-                )}
+                <button
+                  onClick={() => setGithubConfig(prev => ({ ...prev, enabled: !prev.enabled }))}
+                  disabled={!githubConfig.token || !githubConfig.owner || !githubConfig.repo}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors text-sm disabled:opacity-50 ${
+                    githubConfig.enabled 
+                      ? 'bg-red-600 text-white hover:bg-red-700' 
+                      : 'bg-green-600 text-white hover:bg-green-700'
+                  }`}
+                >
+                  {githubConfig.enabled ? (
+                    <>
+                      <WifiOff size={16} />
+                      禁用个人库
+                    </>
+                  ) : (
+                    <>
+                      <Cloud size={16} />
+                      启用个人库
+                    </>
+                  )}
+                </button>
 
                 {lastSyncTime && (
                   <span className="text-xs text-gray-500">
@@ -1964,30 +2213,13 @@ const SmartClaimsAnalyzer = () => {
               </div>
 
               <div className="mt-4 p-3 bg-blue-50 rounded-lg text-sm text-blue-800">
-                <div className="font-semibold mb-2">📖 {PRESET_GITHUB_CONFIG.autoEnable ? 'Vercel自动部署指南' : '手动配置说明'}：</div>
+                <div className="font-semibold mb-2">📖 个人GitHub配置说明：</div>
                 <div className="space-y-1 text-xs">
-                  {PRESET_GITHUB_CONFIG.autoEnable ? (
-                    <>
-                      <div><strong>步骤1：</strong> 在GitHub创建公开仓库 <code>Misaki-15/cosmetics-analyzer-learning</code></div>
-                      <div><strong>步骤2：</strong> 生成GitHub Personal Access Token（需要repo权限）</div>
-                      <div><strong>步骤3：</strong> 在Vercel项目设置 → Environment Variables 中添加：</div>
-                      <div className="ml-4 bg-white p-2 rounded text-gray-800 font-mono text-xs">
-                        REACT_APP_GITHUB_OWNER=Misaki-15<br/>
-                        REACT_APP_GITHUB_REPO=cosmetics-analyzer-learning<br/>
-                        REACT_APP_GITHUB_TOKEN=ghp_your_token_here
-                      </div>
-                      <div><strong>步骤4：</strong> 重新部署项目，程序将自动连接GitHub并开始云端存储</div>
-                      <div className="text-green-600"><strong>✅ 配置完成后，学习数据将实时同步到GitHub！</strong></div>
-                    </>
-                  ) : (
-                    <>
-                      <div>1. 在 GitHub 创建一个<strong>公开仓库</strong>（如：cosmetics-analyzer-learning）</div>
-                      <div>2. 生成 Personal Access Token，需要 <strong>repo</strong> 权限</div>
-                      <div>3. 填写上述信息并测试连接</div>
-                      <div>4. 启用后，学习数据将自动同步到 GitHub</div>
-                      <div>5. 文件保存为：<code>learning-data.json</code></div>
-                    </>
-                  )}
+                  <div>1. 在 GitHub 创建一个<strong>私有仓库</strong>（推荐）用于存储您的学习数据</div>
+                  <div>2. 生成 Personal Access Token，需要 <strong>repo</strong> 权限</div>
+                  <div>3. 填写上述信息并测试连接</div>
+                  <div>4. 启用后，您的个人学习数据将自动同步到 GitHub</div>
+                  <div>5. 文件保存为：<code>learning-data.json</code></div>
                 </div>
               </div>
             </div>
@@ -1997,11 +2229,13 @@ const SmartClaimsAnalyzer = () => {
           {validationMessage.message && (
             <div className={`mb-4 p-4 rounded-lg flex items-start gap-2 ${
               validationMessage.type === 'error' ? 'bg-red-100 text-red-800' : 
+              validationMessage.type === 'warning' ? 'bg-yellow-100 text-yellow-800' :
               validationMessage.type === 'info' ? 'bg-blue-100 text-blue-800' : 
               'bg-green-100 text-green-800'
             }`}>
               <div className="flex-shrink-0 mt-0.5">
                 {validationMessage.type === 'error' ? <XCircle size={20} /> : 
+                 validationMessage.type === 'warning' ? <AlertCircle size={20} /> :
                  validationMessage.type === 'info' ? <AlertCircle size={20} /> :
                  <CheckCircle size={20} />}
               </div>
@@ -2095,7 +2329,7 @@ const SmartClaimsAnalyzer = () => {
             <label className="block text-lg font-semibold text-gray-700 mb-4">
               📝 宣称内容输入 
               <span className="text-red-500 ml-1">*</span>
-              <span className="text-gray-500 text-sm font-normal ml-3">（每行一个宣称，AI会持续学习优化）</span>
+              <span className="text-gray-500 text-sm font-normal ml-3">（每行一个宣称，{learningMode === 'public' ? '公共学习库' : '个人学习库'}模式）</span>
             </label>
             <div className="relative">
               <textarea
@@ -2148,12 +2382,26 @@ const SmartClaimsAnalyzer = () => {
           <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-8 mb-8">
             <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-3">
               <Brain className="text-purple-600" />
-              AI学习面板 v2.4-Misaki15 - 实时GitHub云存储 + 智能管理
-              {githubConfig.enabled && (
+              AI学习面板 v2.4-Misaki15-Public
+              <span className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium ${
+                learningMode === 'public' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+              }`}>
+                {learningMode === 'public' ? (
+                  <>
+                    <Globe size={16} />
+                    公共学习库
+                  </>
+                ) : (
+                  <>
+                    <User size={16} />
+                    个人学习库
+                  </>
+                )}
+              </span>
+              {learningMode === 'public' && publicSyncStatus === 'success' && (
                 <span className="flex items-center gap-1 bg-green-100 text-green-800 px-2 py-1 rounded text-sm">
                   <Cloud size={16} />
-                  自动连接云端
-                  {syncStatus === 'syncing' && <Wifi className="animate-pulse" size={12} />}
+                  已连接
                 </span>
               )}
             </h2>
@@ -2166,6 +2414,14 @@ const SmartClaimsAnalyzer = () => {
                   学习库统计
                 </h3>
                 <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-600">当前模式</span>
+                    <span className={`font-bold px-2 py-1 rounded text-sm ${
+                      learningMode === 'public' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                    }`}>
+                      {learningMode === 'public' ? '🌐 公共库' : '👤 个人库'}
+                    </span>
+                  </div>
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">新学习关键词</span>
                     <span className="font-bold text-indigo-600">
@@ -2192,18 +2448,38 @@ const SmartClaimsAnalyzer = () => {
                       {learningData.learningStats?.accuracyRate || 100}%
                     </span>
                   </div>
+                  {learningMode === 'public' && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">公共贡献</span>
+                      <span className="font-bold text-purple-600">
+                        {learningData.learningStats?.publicContributions || 0} 次
+                      </span>
+                    </div>
+                  )}
                   <div className="flex justify-between items-center">
-                    <span className="text-gray-600">数据持久化</span>
-                    <span className={`font-bold ${githubConfig.enabled ? 'text-green-600' : 'text-orange-600'}`}>
-                      {githubConfig.enabled ? '☁️ GitHub云存储' : '💾 内存存储'}
+                    <span className="text-gray-600">数据存储</span>
+                    <span className={`font-bold ${
+                      learningMode === 'public' ? 'text-green-600' : 
+                      githubConfig.enabled ? 'text-blue-600' : 'text-orange-600'
+                    }`}>
+                      {learningMode === 'public' ? '🌐 公共云端' : 
+                       githubConfig.enabled ? '☁️ 个人GitHub' : '💾 本地存储'}
                     </span>
                   </div>
                 </div>
-                {!githubConfig.enabled && (
+                {learningMode === 'public' && (
+                  <div className="mt-3 p-2 bg-green-50 rounded text-xs">
+                    <div className="font-semibold text-green-800 mb-1">🌐 公共学习库优势：</div>
+                    <div className="text-green-700">
+                      您的每次学习都会帮助所有用户，同时也受益于其他用户的贡献，共同提升AI准确性。
+                    </div>
+                  </div>
+                )}
+                {learningMode === 'personal' && !githubConfig.enabled && (
                   <div className="mt-3 p-2 bg-orange-50 rounded text-xs">
                     <div className="font-semibold text-orange-800 mb-1">⚠️ 数据保存提醒：</div>
                     <div className="text-orange-700">
-                      当前使用内存存储，页面刷新会丢失学习数据。建议启用GitHub云存储或定期导出数据。
+                      当前使用本地存储，页面刷新会丢失学习数据。建议启用GitHub云存储或定期导出数据。
                     </div>
                   </div>
                 )}
@@ -2214,8 +2490,10 @@ const SmartClaimsAnalyzer = () => {
                 <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
                   <BookOpen className="h-5 w-5" />
                   学习库管理
-                  <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded ml-2">
-                    累加存储
+                  <span className={`text-xs px-2 py-1 rounded ml-2 ${
+                    learningMode === 'public' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                  }`}>
+                    {learningMode === 'public' ? '公共共享' : '个人私有'}
                   </span>
                   <button
                     onClick={() => {
@@ -2224,7 +2502,7 @@ const SmartClaimsAnalyzer = () => {
                       const result = analyzeText(testText);
                       setValidationMessage({
                         type: 'info',
-                        message: `🧪 测试结果 (神经酰胺):\n功效: ${result.dimension1.join(', ')}\n类型: ${result.dimension2.join(', ')}\n持续性: ${result.dimension3}\n\n匹配关键词:\n${result.matchedKeywords.map(mk => `"${mk.keyword}" → ${mk.result} (${mk.source})`).join('\n')}`
+                        message: `🧪 测试结果 (神经酰胺):\n功效: ${result.dimension1.join(', ')}\n类型: ${result.dimension2.join(', ')}\n持续性: ${result.dimension3}\n\n匹配关键词:\n${result.matchedKeywords.map(mk => `"${mk.keyword}" → ${mk.result} (${mk.source})`).join('\n')}\n\n学习模式: ${learningMode === 'public' ? '公共学习库' : '个人学习库'}`
                       });
                       setTimeout(() => {
                         setValidationMessage({ type: '', message: '' });
@@ -2315,7 +2593,7 @@ const SmartClaimsAnalyzer = () => {
                 <div className="mt-4 p-3 bg-blue-50 rounded text-xs">
                   <div className="font-semibold text-blue-800 mb-2">🛠️ 学习库管理操作：</div>
                   <div className="text-blue-700 space-y-1">
-                    <div>• <strong>累加存储</strong>：{githubConfig.enabled ? '所有学习数据自动保存到GitHub云端' : '数据保存在内存中，页面刷新会丢失'}</div>
+                    <div>• <strong>{learningMode === 'public' ? '公共共享' : '个人私有'}</strong>：{learningMode === 'public' ? '所有学习数据自动共享给全球用户' : '学习数据保存在您的个人空间中'}</div>
                     <div>• <strong>双击关键词</strong>：编辑关键词内容</div>
                     <div>• <strong>🗑️ 删除按钮</strong>：删除单个关键词记录</div>
                     <div>• <strong>🗑️ 清空按钮</strong>：清空整个功效的所有关键词</div>
@@ -2330,6 +2608,11 @@ const SmartClaimsAnalyzer = () => {
               <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
                 <Target className="h-5 w-5" />
                 手动添加关键词
+                <span className={`text-xs px-2 py-1 rounded ${
+                  learningMode === 'public' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                }`}>
+                  {learningMode === 'public' ? '将贡献到公共库' : '保存到个人库'}
+                </span>
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <input
@@ -2384,10 +2667,14 @@ const SmartClaimsAnalyzer = () => {
                       }, 3000);
                     }
                   }}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 justify-center"
+                  className={`px-4 py-2 rounded-lg text-white transition-colors flex items-center gap-2 justify-center ${
+                    learningMode === 'public' 
+                      ? 'bg-green-600 hover:bg-green-700' 
+                      : 'bg-blue-600 hover:bg-blue-700'
+                  }`}
                 >
                   <Shield size={16} />
-                  智能添加
+                  {learningMode === 'public' ? '贡献到公共库' : '添加到个人库'}
                 </button>
               </div>
               
@@ -2413,7 +2700,7 @@ const SmartClaimsAnalyzer = () => {
                           
                           setValidationMessage({
                             type: 'info',
-                            message: `🔍 测试结果:\n功效: ${result.dimension1.join(', ')}\n类型: ${result.dimension2.join(', ')}\n持续性: ${result.dimension3}\n\n匹配详情:\n${matchedInfo}\n\n说明: base=基础库, learned=学习库`
+                            message: `🔍 测试结果:\n功效: ${result.dimension1.join(', ')}\n类型: ${result.dimension2.join(', ')}\n持续性: ${result.dimension3}\n\n匹配详情:\n${matchedInfo}\n\n学习模式: ${learningMode === 'public' ? '公共学习库' : '个人学习库'}\n说明: base=基础库, learned=学习库`
                           });
                           
                           setTimeout(() => {
@@ -2445,6 +2732,11 @@ const SmartClaimsAnalyzer = () => {
             <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-3">
               <BarChart3 className="text-blue-600" />
               智能分析统计
+              <span className={`text-sm px-2 py-1 rounded ${
+                learningMode === 'public' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+              }`}>
+                {learningMode === 'public' ? '公共学习库' : '个人学习库'}
+              </span>
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-6 rounded-xl text-white shadow-lg">
@@ -2483,6 +2775,12 @@ const SmartClaimsAnalyzer = () => {
                 <div className="text-lg font-semibold mb-3">AI学习状态</div>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between items-center">
+                    <span>学习模式</span>
+                    <span className="font-bold bg-white/20 px-2 py-1 rounded text-xs">
+                      {learningMode === 'public' ? '🌐 公共' : '👤 个人'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
                     <span>纠错次数</span>
                     <span className="font-bold bg-white/20 px-2 py-1 rounded">{learningData.userCorrections?.length || 0}</span>
                   </div>
@@ -2511,16 +2809,25 @@ const SmartClaimsAnalyzer = () => {
           <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-8 mb-8">
             <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-3">
               <TrendingUp className="text-green-600" />
-              智能分析结果 v2.4-Misaki15
+              智能分析结果 v2.4-Misaki15-Public
               <span className="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-3 py-1 rounded-full text-lg font-bold">
                 {analysisResults.length}
               </span>
-              {githubConfig.enabled && syncStatus === 'success' && (
-                <span className="flex items-center gap-1 bg-green-100 text-green-800 px-2 py-1 rounded text-sm">
-                  <Cloud size={16} />
-                  云端已同步
-                </span>
-              )}
+              <span className={`flex items-center gap-1 px-2 py-1 rounded text-sm ${
+                learningMode === 'public' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+              }`}>
+                {learningMode === 'public' ? (
+                  <>
+                    <Globe size={16} />
+                    公共学习库
+                  </>
+                ) : (
+                  <>
+                    <User size={16} />
+                    个人学习库
+                  </>
+                )}
+              </span>
             </h2>
             
             <div className="overflow-x-auto">
@@ -2773,7 +3080,7 @@ const SmartClaimsAnalyzer = () => {
                             <div className="text-xs text-blue-700 bg-white rounded p-2">
                               <div className="font-semibold mb-1">💡 纠错说明：</div>
                               <div>• <strong>勾选/取消</strong>：直接调整AI的分析结果</div>
-                              <div>• <strong>保存修改</strong>：确认纠错并让AI学习</div>
+                              <div>• <strong>保存修改</strong>：确认纠错并让AI学习{learningMode === 'public' ? '（贡献到公共库）' : '（保存到个人库）'}</div>
                               <div>• <strong>添加关键词</strong>：请到"学习面板"进行</div>
                             </div>
                           </div>
