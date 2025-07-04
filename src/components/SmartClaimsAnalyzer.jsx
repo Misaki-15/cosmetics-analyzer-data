@@ -1405,6 +1405,19 @@ const SmartClaimsAnalyzer = () => {
     }
   };
 
+  // 智能分析处理函数
+  const handleAutoAnalysis = () => {
+    if (!inputText.trim()) {
+      setValidationMessage({
+        type: 'error',
+        message: '❌ 请输入要分析的宣称内容'
+      });
+      setTimeout(() => {
+        setValidationMessage({ type: '', message: '' });
+      }, 3000);
+      return;
+    }
+
     // 品类选择提醒
     if (!selectedProductCategory) {
       setValidationMessage({
