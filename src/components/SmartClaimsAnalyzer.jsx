@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Download, RotateCcw, Sparkles, TrendingUp, BarChart3, Eye, Brain, BookOpen, Target, AlertCircle, CheckCircle, XCircle, Shield, Save, Upload, Edit, ThumbsUp, ThumbsDown, Copy, Github, Cloud, Wifi, WifiOff } from 'lucide-react';
-import { Users } from 'lucide-react';
 
 const SmartClaimsAnalyzer = () => {
   // 初始数据加载函数
@@ -146,7 +145,6 @@ const SmartClaimsAnalyzer = () => {
     branch: 'main', // 默认分支
     filePath: 'learning-data.json', // 单一数据文件
     autoEnable: true // 如果有token就自动启用
-    publicAccess: true // 新增：标记为公开访问
   };
   
   // GitHub 存储相关状态
@@ -157,11 +155,9 @@ const SmartClaimsAnalyzer = () => {
         token: PRESET_GITHUB_CONFIG.token,
         owner: PRESET_GITHUB_CONFIG.owner,
         repo: PRESET_GITHUB_CONFIG.repo,
-        enabled: true, // 默认启用
-        isPublic: true // 标记为公开模式
+        enabled: true // 自动启用
       };
-    });
-
+    }
     return {
       token: '',
       owner: '',
@@ -172,16 +168,6 @@ const SmartClaimsAnalyzer = () => {
   const [syncStatus, setSyncStatus] = useState('idle'); // idle, syncing, success, error
   const [showGithubConfig, setShowGithubConfig] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState(null);
-
-  // 3. 添加匿名用户ID生成
-  const [anonymousId, setAnonymousId] = useState(() => {
-    const stored = localStorage.getItem('cosmetics_analyzer_user_id');
-    if (stored) return stored;
-
-    const id = 'user_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 6);
-    localStorage.setItem('cosmetics_analyzer_user_id', id);
-    return id;
-  });
 
   // GitHub API 相关函数
   const loadDataFromGitHub = async () => {
@@ -206,14 +192,6 @@ const SmartClaimsAnalyzer = () => {
         // base64 解码并支持中文
         const content = decodeURIComponent(escape(atob(fileData.content.replace(/\n/g, ''))));
         const data = JSON.parse(content);
-
-        const enhancedData = {
-          ...data,
-          isPublicData: true,
-          contributors: data.contributors || {},
-          accessMode: 'public'
-        };
-        
         setSyncStatus('success');
         setLastSyncTime(new Date());
         return data;
@@ -227,9 +205,6 @@ const SmartClaimsAnalyzer = () => {
     } catch (error) {
       console.error('从 GitHub 加载数据失败:', error);
       setSyncStatus('error');
-      return null;
-     }
-    };
       setValidationMessage({
         type: 'error',
         message: `❌ GitHub 同步失败: ${error.message}`
@@ -272,17 +247,8 @@ const SmartClaimsAnalyzer = () => {
       const finalData = {
         ...dataToSave,
         lastSyncTime: new Date().toISOString(),
-        lastContributor: anonymousId, // 添加贡献者ID
-        syncSource:'public-web-app',
-        isPublicData: true,
-        contributors: {
-          ...dataToSave.contributors,
-          [anonymousId]: {
-            lastContribution: new Date().toISOString(),
-            totalContributions: (dataToSave.contributors?.[anonymousId]?.totalContributions || 0) + 1
-        }
-      }
-    };
+        syncSource: 'web-app'
+      };
 
       // 保存/更新文件
       const content = btoa(unescape(encodeURIComponent(JSON.stringify(finalData, null, 2))));
@@ -296,7 +262,7 @@ const SmartClaimsAnalyzer = () => {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            message: `📚 学习数据更新 - 贡献者: ${anonymousId.substr(0, 12)} - ${new Date().toLocaleString('zh-CN')}`,
+            message: `🧠 更新学习数据 - ${new Date().toLocaleString('zh-CN')}`,
             content: content,
             ...(sha && { sha }) // 如果文件存在，需要提供 SHA
           })
@@ -306,14 +272,6 @@ const SmartClaimsAnalyzer = () => {
       if (response.ok) {
         setSyncStatus('success');
         setLastSyncTime(new Date());
-        setValidationMessage({
-          type: 'success',
-          message: '✅ 学习数据已同步到公共仓库，感谢您的贡献！'
-        });
-        setTimeout(() => {
-          setValidationMessage({ type: '', message: '' });
-        }, 3000);
-        
         return true;
       } else {
         throw new Error(`保存失败: ${response.status}`);
@@ -321,10 +279,6 @@ const SmartClaimsAnalyzer = () => {
     } catch (error) {
       console.error('保存到 GitHub 失败:', error);
       setSyncStatus('error');
-      return false;
-      }
-     };
-
       setValidationMessageSafe({
         type: 'error',
         message: `❌ GitHub 保存失败: ${error.message}`
@@ -432,21 +386,6 @@ const SmartClaimsAnalyzer = () => {
 
     initializeGitHub();
   }, []); // 只在组件挂载时执行一次
-
-  useEffect(() => {
-    const initializePublicData = async () => {
-      if (githubConfig.enabled && githubConfig.isPublic) {
-        console.log('🌐 初始化公开学习库...');
-        const remoteData = await loadDataFromGitHub();
-        if (remoteData) {
-          setLearningData(remoteData);
-          console.log('✅ 公开学习数据加载成功');
-        }
-      }
-    };
-
-    initializePublicData();
-  }, [githubConfig.enabled, githubConfig.isPublic]);
 
   // 改进的自动保存逻辑 - 防抖 + 状态检查
   useEffect(() => {
@@ -788,7 +727,6 @@ const SmartClaimsAnalyzer = () => {
 
   const dimension2Options = [
     { value: '温和宣称', color: 'bg-green-100 text-green-800' },
-    { value: '敏感肌宣称', color: 'bg-green-100 text-green-800' },
     { value: '原料功效', color: 'bg-blue-100 text-blue-800' },
     { value: '量化指标', color: 'bg-purple-100 text-purple-800' },
     { value: '喜好度', color: 'bg-pink-100 text-pink-800' },
@@ -865,37 +803,36 @@ const SmartClaimsAnalyzer = () => {
   // 基础关键词映射 - 保持稳定不变
   const baseKeywordMapping = {
     功效: {
-      '保湿|滋润|水润|锁水|补水|保水|润泽|湿润|水分|水嫩': '保湿',
-      '美白|祛斑|亮白|透亮|去斑|淡斑|提亮|均匀肤色|白皙|净白': '祛斑美白',
-      '抗皱|去皱|除皱|皱纹|纹路|细纹|表情纹|法令纹|鱼尾纹|抬头纹': '抗皱',
-      '紧致|紧实|弹性|胶原|提拉|lifting|firmness|弹力': '紧致',
-      '滋养|润养|养护|深层滋养|营养': '滋养',
-      '修护|修复|屏障|强韧|修复力': '修护',
-      '清洁|洗净|去污|清洗|冲洗|洁净|深层清洁|彻底清洁|温和清洁': '清洁',
-      '控油|吸油|去油|油腻|油光|T区|出油|哑光|清爽': '控油',
-      '舒缓|缓解|减轻|改善刺激|镇静|敏感|刺激': '舒缓',
-      '防晒|隔离|阻挡|紫外线|UV|SPF|PA|日晒|阳光': '防晒',
-      '护发|柔顺|丝滑|光泽|shine|顺滑|柔软|梳理|防静电|蓬松': '护发',
-      '祛痘|痘痘|粉刺|青春痘|暗疮|痤疮|黑头|白头|闭口': '祛痘',
-      '染发|着色|上色|显色|彩色|发色|调色|漂色': '染发',
-      '烫发|卷发|直发|弯曲|拉直|造型|定型|塑型|波浪': '烫发',
+      '保湿|滋润|水润|锁水|补水|保水|润泽|湿润|水分|水嫩|玻尿酸|透明质酸|甘油|角鲨烷': '保湿',
+      '美白|祛斑|亮白|透亮|去斑|淡斑|提亮|均匀肤色|白皙|净白|烟酰胺|熊果苷|VC': '祛斑美白',
+      '抗皱|去皱|除皱|皱纹|纹路|细纹|表情纹|法令纹|鱼尾纹|抬头纹|视黄醇|肽': '抗皱',
+      '紧致|紧实|弹性|胶原|胶原蛋白|提拉|lifting|firmness|弹力|塑形': '紧致',
+      '滋养|润养|养护|深层滋养|营养|补养|润泽|浸润|渗透|精华': '滋养',
+      '修护|修复|屏障|强韧|修复力|愈合|重建|再生|修复因子|神经酰胺': '修护',
+      '清洁|洗净|去污|清洗|冲洗|洁净|深层清洁|彻底清洁|温和清洁|泡沫': '清洁',
+      '控油|吸油|去油|油腻|油光|T区|出油|皮脂|哑光|清爽|水杨酸': '控油',
+      '舒缓|缓解|减轻|改善刺激|温和|安抚|镇静|敏感|刺激|积雪草|洋甘菊': '舒缓',
+      '防晒|隔离|防护|阻挡|紫外线|UV|SPF|PA|日晒|阳光|氧化锌|二氧化钛': '防晒',
+      '护发|柔顺|丝滑|光泽|shine|顺滑|柔软|梳理|防静电|发膜|护发素|蓬松': '护发',
+      '祛痘|痘痘|粉刺|青春痘|暗疮|痤疮|黑头|白头|闭口|茶树|水杨酸': '祛痘',
+      '染发|着色|上色|显色|彩色|颜色|发色|调色|漂色|染膏': '染发',
+      '烫发|卷发|直发|弯曲|拉直|造型|定型|塑型|波浪|烫发水': '烫发',
       '卸妆|卸除|卸掉|去妆|卸妆水|卸妆油|卸妆乳|卸妆膏|清除彩妆': '卸妆',
-      '美容|修饰|妆容|彩妆|化妆|遮瑕|遮盖|掩盖|美化': '美容修饰',
+      '美容|修饰|妆容|彩妆|化妆|遮瑕|遮盖|掩盖|美化|底妆': '美容修饰',
       '香|香味|香气|留香|体香|香调|香水|芳香|香氛|香精': '芳香',
       '除臭|去味|去异味|抑制异味|防臭|消臭|止汗|腋下|体味': '除臭',
       '去角质|角质|exfoliate|磨砂|剥脱|脱皮|死皮|果酸|酵素': '去角质',
       '爽身|干爽|清凉|凉爽|清爽|舒适|透气|凉感|薄荷': '爽身',
-      '防脱|脱发|掉发|固发|育发|生发|发根|发量|浓密': '防脱发',
-      '防断发|断发|分叉|韧性|强韧|坚韧|发丝强度': '防断发',
-      '去屑|头屑|dandruff|头皮屑|鳞屑|片状|白屑': '去屑',
-      '发色护理|护色|锁色|保色|发色|色彩|颜色保持': '发色护理',
-      '脱毛|除毛|去毛|hair removal|腿毛|腋毛|体毛': '脱毛',
-      '剃须|剃毛|shaving|胡须|胡子|刮胡': '辅助剃须剃毛'
+      '防脱|脱发|掉发|固发|育发|生发|发根|发量|浓密|生姜': '防脱发',
+      '防断发|断发|分叉|韧性|强韧|坚韧|发丝强度|蛋白质': '防断发',
+      '去屑|头屑|dandruff|头皮屑|鳞屑|片状|白屑|吡啶硫酮锌': '去屑',
+      '发色护理|护色|锁色|保色|发色|色彩|颜色保持|护色素': '发色护理',
+      '脱毛|除毛|去毛|hair removal|腿毛|腋毛|体毛|脱毛膏': '脱毛',
+      '剃须|剃毛|shaving|胡须|胡子|刮胡|剃刀|剃须膏': '辅助剃须剃毛'
     },
     
     类型: {
-      '温和|无刺激|不刺激|亲肤|gentle|mild|温柔|柔和|低刺激|0刺激': '温和宣称',
-      '敏感肌|敏感': '敏感肌宣称',
+      '温和|无刺激|不刺激|亲肤|gentle|mild|温柔|柔和|低刺激|敏感肌|0刺激': '温和宣称',
       '成分|原料|ingredient|含有|添加|富含|萃取|extract|精华|配方|活性物': '原料功效',
       '24小时|12小时|8小时|持续|%|倍|次|程度|测试|临床|数据|调查|数字': '量化指标',
       '喜欢|喜好|满意|推荐|好评|评価|好用|实用|有效|回购|点赞': '喜好度',
@@ -1796,26 +1733,6 @@ const SmartClaimsAnalyzer = () => {
                 📊 Excel导出功能完整修复：支持真正的Excel文件下载，同时提供CSV备选方案！
               </span>
             </p>
-            {githubConfig.isPublic && (
-              <div className="mb-6 p-4 bg-gradient-to-r from-green-50 to-blue-50 rounded-xl border border-green-200">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                  <h3 className="font-semibold text-gray-800">🌐 公开学习模式</h3>
-                  <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
-                    所有用户可访问
-                  </span>
-                </div>
-                <div className="text-sm text-gray-700">
-                  <div className="mb-1">
-                    <span className="font-medium">您的贡献ID：</span>
-                    <code className="bg-white px-2 py-1 rounded text-xs ml-1">{anonymousId}</code>
-                  </div>
-                  <div className="text-green-700">
-                    ✅ 您的学习数据贡献将帮助所有用户获得更好的分析结果
-                  </div>
-                </div>
-              </div>
-            )}
             {githubConfig.enabled && lastSyncTime && (
               <p className="text-sm text-gray-500 mt-2">
                 最后保存时间: {lastSaveTime?.toLocaleString()}
@@ -2567,29 +2484,6 @@ const SmartClaimsAnalyzer = () => {
                   <div className="flex justify-between items-center">
                     <span>准确率</span>
                     <span className="font-bold bg-white/20 px-2 py-1 rounded">
-                      {learningData.contributors && Object.keys(learningData.contributors).length > 0 && (
-                        <div className="mt-4 p-3 bg-white rounded-lg border border-gray-200">
-                          <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
-                            <Users className="h-4 w-4" />
-                            贡献者统计
-                          </h4>
-                          <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div>
-                              <span className="text-gray-600">总贡献者：</span>
-                              <span className="font-medium ml-1">{Object.keys(learningData.contributors).length}</span>
-                            </div>
-                            <div>
-                              <span className="text-gray-600">您的贡献次数：</span>
-                              <span className="font-medium ml-1">
-                                {learningData.contributors[anonymousId]?.totalContributions || 0}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="mt-2 text-xs text-gray-500">
-                            最后更新: {learningData.lastUpdated ? new Date(learningData.lastUpdated).toLocaleString('zh-CN') : '未知'}
-                          </div>
-                        </div>
-                      )}
                       {learningData.learningStats?.accuracyRate || 100}%
                     </span>
                   </div>
