@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Download, RotateCcw, Sparkles, TrendingUp, BarChart3, Eye, Brain, BookOpen, Target, AlertCircle, CheckCircle, XCircle, Shield, Save, Upload, Edit, ThumbsUp, ThumbsDown, Copy, Github, Cloud, Wifi, WifiOff } from 'lucide-react';
+import { Users } from 'lucide-react';
 
 const SmartClaimsAnalyzer = () => {
   // 初始数据加载函数
@@ -145,6 +146,7 @@ const SmartClaimsAnalyzer = () => {
     branch: 'main', // 默认分支
     filePath: 'learning-data.json', // 单一数据文件
     autoEnable: true // 如果有token就自动启用
+    publicAccess: true // 新增：标记为公开访问
   };
   
   // GitHub 存储相关状态
@@ -155,9 +157,11 @@ const SmartClaimsAnalyzer = () => {
         token: PRESET_GITHUB_CONFIG.token,
         owner: PRESET_GITHUB_CONFIG.owner,
         repo: PRESET_GITHUB_CONFIG.repo,
-        enabled: true // 自动启用
+        enabled: true, // 默认启用
+        isPublic: true // 标记为公开模式
       };
-    }
+    });
+
     return {
       token: '',
       owner: '',
@@ -168,6 +172,16 @@ const SmartClaimsAnalyzer = () => {
   const [syncStatus, setSyncStatus] = useState('idle'); // idle, syncing, success, error
   const [showGithubConfig, setShowGithubConfig] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState(null);
+
+  // 3. 添加匿名用户ID生成
+  const [anonymousId, setAnonymousId] = useState(() => {
+    const stored = localStorage.getItem('cosmetics_analyzer_user_id');
+    if (stored) return stored;
+
+    const id = 'user_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 6);
+    localStorage.setItem('cosmetics_analyzer_user_id', id);
+    return id;
+  });
 
   // GitHub API 相关函数
   const loadDataFromGitHub = async () => {
@@ -192,6 +206,14 @@ const SmartClaimsAnalyzer = () => {
         // base64 解码并支持中文
         const content = decodeURIComponent(escape(atob(fileData.content.replace(/\n/g, ''))));
         const data = JSON.parse(content);
+
+        const enhancedData = {
+          ...data,
+          isPublicData: true,
+          contributors: data.contributors || {},
+          accessMode: 'public'
+        };
+        
         setSyncStatus('success');
         setLastSyncTime(new Date());
         return data;
@@ -205,6 +227,9 @@ const SmartClaimsAnalyzer = () => {
     } catch (error) {
       console.error('从 GitHub 加载数据失败:', error);
       setSyncStatus('error');
+      return null;
+     }
+    };
       setValidationMessage({
         type: 'error',
         message: `❌ GitHub 同步失败: ${error.message}`
@@ -247,8 +272,17 @@ const SmartClaimsAnalyzer = () => {
       const finalData = {
         ...dataToSave,
         lastSyncTime: new Date().toISOString(),
-        syncSource: 'web-app'
-      };
+        lastContributor: anonymousId, // 添加贡献者ID
+        syncSource:'public-web-app',
+        isPublicData: true,
+        contributors: {
+          ...dataToSave.contributors,
+          [anonymousId]: {
+            lastContribution: new Date().toISOString(),
+            totalContributions: (dataToSave.contributors?.[anonymousId]?.totalContributions || 0) + 1
+        }
+      }
+    };
 
       // 保存/更新文件
       const content = btoa(unescape(encodeURIComponent(JSON.stringify(finalData, null, 2))));
@@ -262,7 +296,7 @@ const SmartClaimsAnalyzer = () => {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            message: `🧠 更新学习数据 - ${new Date().toLocaleString('zh-CN')}`,
+            message: `📚 学习数据更新 - 贡献者: ${anonymousId.substr(0, 12)} - ${new Date().toLocaleString('zh-CN')}`,
             content: content,
             ...(sha && { sha }) // 如果文件存在，需要提供 SHA
           })
@@ -272,6 +306,14 @@ const SmartClaimsAnalyzer = () => {
       if (response.ok) {
         setSyncStatus('success');
         setLastSyncTime(new Date());
+        setValidationMessage({
+          type: 'success',
+          message: '✅ 学习数据已同步到公共仓库，感谢您的贡献！'
+        });
+        setTimeout(() => {
+          setValidationMessage({ type: '', message: '' });
+        }, 3000);
+        
         return true;
       } else {
         throw new Error(`保存失败: ${response.status}`);
@@ -279,6 +321,10 @@ const SmartClaimsAnalyzer = () => {
     } catch (error) {
       console.error('保存到 GitHub 失败:', error);
       setSyncStatus('error');
+      return false;
+      }
+     };
+
       setValidationMessageSafe({
         type: 'error',
         message: `❌ GitHub 保存失败: ${error.message}`
@@ -386,6 +432,21 @@ const SmartClaimsAnalyzer = () => {
 
     initializeGitHub();
   }, []); // 只在组件挂载时执行一次
+
+  useEffect(() => {
+    const initializePublicData = async () => {
+      if (githubConfig.enabled && githubConfig.isPublic) {
+        console.log('🌐 初始化公开学习库...');
+        const remoteData = await loadDataFromGitHub();
+        if (remoteData) {
+          setLearningData(remoteData);
+          console.log('✅ 公开学习数据加载成功');
+        }
+      }
+    };
+
+    initializePublicData();
+  }, [githubConfig.enabled, githubConfig.isPublic]);
 
   // 改进的自动保存逻辑 - 防抖 + 状态检查
   useEffect(() => {
@@ -1735,6 +1796,26 @@ const SmartClaimsAnalyzer = () => {
                 📊 Excel导出功能完整修复：支持真正的Excel文件下载，同时提供CSV备选方案！
               </span>
             </p>
+            {githubConfig.isPublic && (
+              <div className="mb-6 p-4 bg-gradient-to-r from-green-50 to-blue-50 rounded-xl border border-green-200">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                  <h3 className="font-semibold text-gray-800">🌐 公开学习模式</h3>
+                  <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
+                    所有用户可访问
+                  </span>
+                </div>
+                <div className="text-sm text-gray-700">
+                  <div className="mb-1">
+                    <span className="font-medium">您的贡献ID：</span>
+                    <code className="bg-white px-2 py-1 rounded text-xs ml-1">{anonymousId}</code>
+                  </div>
+                  <div className="text-green-700">
+                    ✅ 您的学习数据贡献将帮助所有用户获得更好的分析结果
+                  </div>
+                </div>
+              </div>
+            )}
             {githubConfig.enabled && lastSyncTime && (
               <p className="text-sm text-gray-500 mt-2">
                 最后保存时间: {lastSaveTime?.toLocaleString()}
@@ -2486,6 +2567,29 @@ const SmartClaimsAnalyzer = () => {
                   <div className="flex justify-between items-center">
                     <span>准确率</span>
                     <span className="font-bold bg-white/20 px-2 py-1 rounded">
+                      {learningData.contributors && Object.keys(learningData.contributors).length > 0 && (
+                        <div className="mt-4 p-3 bg-white rounded-lg border border-gray-200">
+                          <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                            <Users className="h-4 w-4" />
+                            贡献者统计
+                          </h4>
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                              <span className="text-gray-600">总贡献者：</span>
+                              <span className="font-medium ml-1">{Object.keys(learningData.contributors).length}</span>
+                            </div>
+                            <div>
+                              <span className="text-gray-600">您的贡献次数：</span>
+                              <span className="font-medium ml-1">
+                                {learningData.contributors[anonymousId]?.totalContributions || 0}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="mt-2 text-xs text-gray-500">
+                            最后更新: {learningData.lastUpdated ? new Date(learningData.lastUpdated).toLocaleString('zh-CN') : '未知'}
+                          </div>
+                        </div>
+                      )}
                       {learningData.learningStats?.accuracyRate || 100}%
                     </span>
                   </div>
