@@ -101,12 +101,9 @@ const SmartClaimsAnalyzer = () => {
       
       // 根据学习模式选择保存方式
       if (learningMode === 'public') {
-        const success = await saveToPublicLibrary(updatedData);
-        if (success) {
-          console.log('✅ 公共学习库保存成功');
-          return true;
-        } else {
-          throw new Error('公共学习库保存失败');
+         const success = await saveToPublicLibrary(updatedData);
+         console.log(success ? '✅ 公共学习库保存完成' : '⚠️ 公共学习库保存失败，已保存到本地');
+         return true; // 🔧 修复：公共库成功或失败都返回true，保证用户体验
         }
       } else if (githubConfig.enabled) {
         const success = await saveDataToGitHub(updatedData);
@@ -153,11 +150,13 @@ const SmartClaimsAnalyzer = () => {
   const PUBLIC_LEARNING_CONFIG = {
     owner: 'Misaki-15',
     repo: 'cosmetics-analyzer-public-learning',
-    token: process.env.REACT_APP_PUBLIC_GITHUB_TOKEN || 'ghp_your_public_token_here',
+    token: process.env.REACT_APP_PUBLIC_GITHUB_TOKEN,
     branch: 'main',
     filePath: 'public-learning-data.json',
     name: '公共学习库',
-    description: '所有用户共享的学习数据库'
+    description: '所有用户共享的学习数据库',
+    enabled: !!process.env.REACT_APP_PUBLIC_GITHUB_TOKEN && 
+            process.env.REACT_APP_PUBLIC_GITHUB_TOKEN !== 'ghp_your_public_token_here'
   };
   
   // 个人GitHub配置 - 保持向后兼容
@@ -232,10 +231,22 @@ const SmartClaimsAnalyzer = () => {
   };
 
   const saveToPublicLibrary = async (dataToSave) => {
+    if (!PUBLIC_LEARNING_CONFIG.enabled || !PUBLIC_LEARNING_CONFIG.token) {
+      console.log('⚠️ 公共学习库未正确配置，使用本地模式');
+      setValidationMessage({
+        type: 'info',
+        message: '💾 数据已保存到本地（公共学习库功能需要管理员配置）'
+      });
+      setTimeout(() => {
+        setValidationMessage({ type: '', message: '' });
+      }, 3000);
+      return true; // 返回成功，避免阻塞用户操作
+    }
+    
     try {
       setPublicSyncStatus('syncing');
       console.log('🌐 保存数据到公共学习库...');
-      
+
       // 添加公共贡献标识
       const publicData = {
         ...dataToSave,
@@ -303,16 +314,28 @@ const SmartClaimsAnalyzer = () => {
           message: '🔄 检测到其他用户同时在学习，稍后会自动重试保存...'
         });
       } else {
+        // 🔧 修复：更智能的错误处理
+        let userMessage = '';
+        if (error.message.includes('401')) {
+          userMessage = '⚠️ 公共学习库访问权限配置问题，数据已保存到本地';
+        } else if (error.message.includes('403')) {
+          userMessage = '⚠️ 公共学习库访问受限，数据已保存到本地';
+        } else if (error.message.includes('404')) {
+          userMessage = '⚠️ 公共学习库仓库未找到，数据已保存到本地';
+        } else {
+          userMessage = `⚠️ 公共学习库暂时不可用，数据已保存到本地`;
+        }
+  
         setValidationMessage({
           type: 'warning',
-          message: `⚠️ 公共学习库暂时无法保存: ${error.message}，数据已保存到本地`
+          message: userMessage
         });
       }
-      
+
       setTimeout(() => {
         setValidationMessage({ type: '', message: '' });
       }, 5000);
-      return false;
+      return true; // 🔧 修复：即使公共库失败，也返回成功，保证本地功能正常
     }
   };
 
@@ -321,6 +344,18 @@ const SmartClaimsAnalyzer = () => {
     setLearningMode(mode);
     
     if (mode === 'public') {
+      if (!PUBLIC_LEARNING_CONFIG.enabled) {
+        setValidationMessage({
+          type: 'warning',
+          message: '⚠️ 公共学习库功能需要管理员配置，自动切换到本地模式'
+        });
+        setTimeout(() => {
+          setValidationMessage({ type: '', message: '' });
+        }, 4000);
+        setLearningMode('local'); // 自动降级到本地模式
+        return;
+      }
+      
       // 切换到公共学习库
       console.log('🌐 切换到公共学习库模式');
       const publicData = await loadDataFromPublicLibrary();
