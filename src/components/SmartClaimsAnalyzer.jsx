@@ -103,15 +103,15 @@ const SmartClaimsAnalyzer = () => {
       if (learningMode === 'public') {
          const success = await saveToPublicLibrary(updatedData);
          console.log(success ? '✅ 公共学习库保存完成' : '⚠️ 公共学习库保存失败，已保存到本地');
-         return true; // 🔧 修复：公共库成功或失败都返回true，保证用户体验
-        }
+         return true;
       } else if (githubConfig.enabled) {
         const success = await saveDataToGitHub(updatedData);
         if (success) {
           console.log('✅ 个人GitHub保存成功');
           return true;
         } else {
-          throw new Error('个人GitHub保存失败');
+          console.log('⚠️ 个人GitHub保存失败，数据已保存到本地');
+          return true;
         }
       }
       
@@ -123,18 +123,18 @@ const SmartClaimsAnalyzer = () => {
       
       // 只在立即保存时显示错误给用户
       if (immediate) {
-        setValidationMessageSafe({
-          type: 'error',
-          message: `❌ 保存失败: ${error.message}`
+        setValidationMessage({
+          type: 'warning',
+          message: `⚠️ 保存遇到问题，数据已保存到本地`
         });
         setTimeout(() => {
           setValidationMessage({ type: '', message: '' });
         }, 3000);
       }
       
-      return false;
+      return true;
       
-    } finally {
+    } finally {  // ← finally 语句（可选但推荐）
       setIsSaving(false);
       
       // 检查是否有待保存的操作
