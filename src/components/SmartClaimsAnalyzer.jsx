@@ -1,7 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Download, RotateCcw, Sparkles, TrendingUp, BarChart3, Eye, Brain, BookOpen, Target, AlertCircle, CheckCircle, XCircle, Shield, Save, Upload, Edit, ThumbsUp, ThumbsDown, Copy, Github, Cloud, Wifi, WifiOff } from 'lucide-react';
+import { Download, RotateCcw, Sparkles, TrendingUp, BarChart3, Eye, Brain, BookOpen, Target, AlertCircle, CheckCircle, XCircle, Shield, Save, Upload, Edit, ThumbsUp, ThumbsDown, Copy, Github, Cloud, Wifi, WifiOff, RefreshCw, GitBranch, Clock, Users } from 'lucide-react';
 
 const SmartClaimsAnalyzer = () => {
+  // 生成设备ID
+  const generateDeviceId = () => {
+    const stored = localStorage.getItem('device_id');
+    if (stored) return stored;
+    
+    const newId = 'device_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+    localStorage.setItem('device_id', newId);
+    return newId;
+  };
+
   // 初始数据加载函数
   const loadInitialData = () => {
     return {
@@ -24,7 +34,12 @@ const SmartClaimsAnalyzer = () => {
         totalCorrections: 0,
         accuracyRate: 100,
         lastAccuracyUpdate: null
-      }
+      },
+      // 新增：数据同步相关字段
+      dataSource: 'local', // local, github, merged
+      lastSyncTime: null,
+      dataVersion: Date.now(),
+      deviceId: generateDeviceId()
     };
   };
 
@@ -48,6 +63,14 @@ const SmartClaimsAnalyzer = () => {
   const [pendingSave, setPendingSave] = useState(false);
   const saveTimeoutRef = useRef(null);
   
+  // 新增：同步相关状态
+  const [syncStatus, setSyncStatus] = useState('idle');
+  const [lastSyncTime, setLastSyncTime] = useState(null);
+  const [showConflictModal, setShowConflictModal] = useState(false);
+  const [conflictData, setConflictData] = useState(null);
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState(true);
+  const autoSyncRef = useRef(null);
+  
   // 智能消息保护机制
   const setValidationMessageSafe = (newMessage) => {
     setValidationMessage(prev => {
@@ -63,6 +86,113 @@ const SmartClaimsAnalyzer = () => {
       // 其他错误正常显示
       return newMessage;
     });
+  };
+
+  // 智能数据合并函数
+  const mergeData = (localData, remoteData) => {
+    if (!remoteData) return localData;
+    if (!localData) return remoteData;
+
+    console.log('🔄 开始智能合并数据...');
+    const merged = { ...localData };
+    
+    // 合并新关键词 - 智能合并，保留所有关键词
+    Object.entries(remoteData.newKeywords || {}).forEach(([category, efficacies]) => {
+      if (!merged.newKeywords[category]) merged.newKeywords[category] = {};
+      
+      Object.entries(efficacies).forEach(([efficacy, keywords]) => {
+        if (!merged.newKeywords[category][efficacy]) {
+          merged.newKeywords[category][efficacy] = [...keywords];
+          console.log(`✅ 新增功效: ${category}-${efficacy}, 关键词: ${keywords.join(', ')}`);
+        } else {
+          // 合并关键词，去重
+          const originalCount = merged.newKeywords[category][efficacy].length;
+          const combined = new Set([...merged.newKeywords[category][efficacy], ...keywords]);
+          merged.newKeywords[category][efficacy] = Array.from(combined);
+          const newCount = merged.newKeywords[category][efficacy].length;
+          
+          if (newCount > originalCount) {
+            console.log(`🔄 合并功效: ${category}-${efficacy}, 原有${originalCount}个，新增${newCount - originalCount}个关键词`);
+          }
+        }
+      });
+    });
+
+    // 合并关键词得分 - 取最高分，保留最佳学习效果
+    Object.entries(remoteData.keywordScores || {}).forEach(([keyword, score]) => {
+      const localScore = merged.keywordScores[keyword] || 0;
+      if (score > localScore) {
+        merged.keywordScores[keyword] = score;
+        console.log(`📈 更新关键词得分: "${keyword}" ${localScore} → ${score}`);
+      }
+    });
+
+    // 合并用户纠错记录 - 去重合并
+    const existingIds = new Set((merged.userCorrections || []).map(item => item.id));
+    const newCorrections = (remoteData.userCorrections || []).filter(item => !existingIds.has(item.id));
+    merged.userCorrections = [...(merged.userCorrections || []), ...newCorrections];
+    
+    if (newCorrections.length > 0) {
+      console.log(`📝 合并纠错记录: 新增${newCorrections.length}条`);
+    }
+
+    // 合并已移除关键词 - 保持删除状态的一致性
+    Object.entries(remoteData.removedKeywords || {}).forEach(([key, keywords]) => {
+      if (!merged.removedKeywords[key]) {
+        merged.removedKeywords[key] = [...keywords];
+      } else {
+        const combined = new Set([...merged.removedKeywords[key], ...keywords]);
+        merged.removedKeywords[key] = Array.from(combined);
+      }
+    });
+
+    // 更新元数据
+    merged.lastUpdated = new Date().toISOString();
+    merged.dataSource = 'merged';
+    merged.lastSyncTime = new Date().toISOString();
+    merged.dataVersion = Math.max(localData.dataVersion || 0, remoteData.dataVersion || 0) + 1;
+
+    console.log('✅ 数据合并完成');
+    return merged;
+  };
+
+  // 检测数据冲突
+  const detectConflict = (localData, remoteData) => {
+    if (!remoteData || !localData) return false;
+    
+    // 检查关键词数量差异
+    const getKeywordCount = (data) => 
+      Object.values(data.newKeywords || {}).reduce((total, category) => 
+        total + Object.values(category).reduce((sum, keywords) => sum + keywords.length, 0), 0
+      );
+    
+    const localKeywords = getKeywordCount(localData);
+    const remoteKeywords = getKeywordCount(remoteData);
+    
+    // 检查设备ID差异
+    const differentDevices = localData.deviceId !== remoteData.deviceId;
+    
+    // 检查最后更新时间差异
+    const localTime = new Date(localData.lastUpdated || 0).getTime();
+    const remoteTime = new Date(remoteData.lastUpdated || 0).getTime();
+    const timeDifference = Math.abs(localTime - remoteTime) > 3600000; // 1小时
+    
+    // 关键词数量差异超过5个且来自不同设备且时间差异大，认为有冲突
+    const significantDifference = Math.abs(localKeywords - remoteKeywords) > 5;
+    
+    const hasConflict = significantDifference && differentDevices && timeDifference;
+    
+    if (hasConflict) {
+      console.log('⚠️ 检测到数据冲突:', {
+        localKeywords,
+        remoteKeywords,
+        localDevice: localData.deviceId,
+        remoteDevice: remoteData.deviceId,
+        timeDifference: timeDifference / 3600000 + '小时'
+      });
+    }
+    
+    return hasConflict;
   };
 
   // 智能保存管理函数
@@ -86,7 +216,8 @@ const SmartClaimsAnalyzer = () => {
     // 使用传入的数据或当前状态数据
     const updatedData = dataToSave || {
       ...learningData,
-      lastUpdated: new Date().toISOString()
+      lastUpdated: new Date().toISOString(),
+      dataVersion: (learningData.dataVersion || 0) + 1
     };
     
     // 如果没有传入数据，更新状态
@@ -165,18 +296,16 @@ const SmartClaimsAnalyzer = () => {
       enabled: false
     };
   });
-  const [syncStatus, setSyncStatus] = useState('idle'); // idle, syncing, success, error
   const [showGithubConfig, setShowGithubConfig] = useState(false);
-  const [lastSyncTime, setLastSyncTime] = useState(null);
 
   // GitHub API 相关函数
-  const loadDataFromGitHub = async () => {
+  const loadDataFromGitHub = async (showProgress = true) => {
     if (!githubConfig.enabled || !githubConfig.token || !githubConfig.owner || !githubConfig.repo) {
       return null;
     }
 
     try {
-      setSyncStatus('syncing');
+      if (showProgress) setSyncStatus('syncing');
       const response = await fetch(
         `https://api.github.com/repos/${githubConfig.owner}/${githubConfig.repo}/contents/learning-data.json`,
         {
@@ -192,28 +321,132 @@ const SmartClaimsAnalyzer = () => {
         // base64 解码并支持中文
         const content = decodeURIComponent(escape(atob(fileData.content.replace(/\n/g, ''))));
         const data = JSON.parse(content);
-        setSyncStatus('success');
-        setLastSyncTime(new Date());
-        return data;
+        
+        if (showProgress) {
+          setSyncStatus('success');
+          setLastSyncTime(new Date());
+        }
+        
+        return {
+          ...data,
+          sha: fileData.sha // 保存SHA用于后续更新
+        };
       } else if (response.status === 404) {
         // 文件不存在，这是正常情况（首次使用）
-        setSyncStatus('success');
+        if (showProgress) setSyncStatus('success');
         return null;
       } else {
         throw new Error(`GitHub API 错误: ${response.status}`);
       }
     } catch (error) {
       console.error('从 GitHub 加载数据失败:', error);
+      if (showProgress) {
+        setSyncStatus('error');
+        setValidationMessage({
+          type: 'error',
+          message: `❌ GitHub 同步失败: ${error.message}`
+        });
+        setTimeout(() => {
+          setValidationMessage({ type: '', message: '' });
+        }, 5000);
+      }
+      return null;
+    }
+  };
+
+  // 手动同步数据
+  const syncDataFromGitHub = async () => {
+    try {
+      setSyncStatus('syncing');
+      setValidationMessage({
+        type: 'info',
+        message: '🔄 正在从云端同步学习数据...'
+      });
+
+      const remoteData = await loadDataFromGitHub(false);
+      
+      if (!remoteData) {
+        // GitHub上没有数据，上传本地数据
+        const uploadData = {
+          ...learningData,
+          lastSyncTime: new Date().toISOString(),
+          dataSource: 'local'
+        };
+        
+        const success = await saveDataToGitHub(uploadData);
+        if (success) {
+          setLearningData(uploadData);
+          setSyncStatus('success');
+          setLastSyncTime(new Date());
+          setValidationMessage({
+            type: 'success',
+            message: '✅ 本地数据已上传到GitHub云端！这是首次同步。'
+          });
+        }
+      } else if (detectConflict(learningData, remoteData)) {
+        // 检测到冲突，显示冲突解决界面
+        setConflictData({ local: learningData, remote: remoteData });
+        setShowConflictModal(true);
+        setSyncStatus('conflict');
+        setValidationMessage({
+          type: 'warning',
+          message: '⚠️ 检测到数据冲突！请选择合并策略。'
+        });
+        return;
+      } else {
+        // 智能合并数据
+        const mergedData = mergeData(learningData, remoteData);
+        setLearningData(mergedData);
+        
+        // 保存合并后的数据到GitHub
+        const success = await saveDataToGitHub(mergedData);
+        if (success) {
+          setSyncStatus('success');
+          setLastSyncTime(new Date());
+          setValidationMessage({
+            type: 'success',
+            message: '🔄 数据同步成功！已智能合并本地和云端数据，学习库已更新。'
+          });
+        }
+      }
+      
+      setTimeout(() => setValidationMessage({ type: '', message: '' }), 5000);
+    } catch (error) {
+      console.error('同步失败:', error);
       setSyncStatus('error');
       setValidationMessage({
         type: 'error',
-        message: `❌ GitHub 同步失败: ${error.message}`
+        message: `❌ 同步失败: ${error.message}`
       });
-      setTimeout(() => {
-        setValidationMessage({ type: '', message: '' });
-      }, 5000);
-      return null;
+      setTimeout(() => setValidationMessage({ type: '', message: '' }), 5000);
     }
+  };
+
+  // 启动自动同步
+  const startAutoSync = () => {
+    if (!autoSyncEnabled || !githubConfig.enabled) return;
+    
+    // 清除之前的定时器
+    if (autoSyncRef.current) {
+      clearInterval(autoSyncRef.current);
+    }
+    
+    // 每5分钟自动同步一次
+    autoSyncRef.current = setInterval(async () => {
+      console.log('🔄 执行自动同步...');
+      try {
+        const remoteData = await loadDataFromGitHub(false);
+        if (remoteData && !detectConflict(learningData, remoteData)) {
+          const mergedData = mergeData(learningData, remoteData);
+          if (mergedData.dataVersion > learningData.dataVersion) {
+            setLearningData(mergedData);
+            console.log('✅ 自动同步完成，数据已更新');
+          }
+        }
+      } catch (error) {
+        console.error('自动同步失败:', error);
+      }
+    }, 300000); // 5分钟
   };
 
   const saveDataToGitHub = async (dataToSave) => {
@@ -350,15 +583,13 @@ const SmartClaimsAnalyzer = () => {
           setSyncStatus('syncing');
           const data = await loadDataFromGitHub();
           if (data) {
-            setLearningData(prev => ({
-              ...loadInitialData(),
-              ...data,
-              lastUpdated: new Date().toISOString()
-            }));
-            console.log('✅ 成功加载GitHub学习数据');
+            // 智能合并初始数据
+            const mergedData = mergeData(learningData, data);
+            setLearningData(mergedData);
+            console.log('✅ 成功加载并合并GitHub学习数据');
             setValidationMessage({
               type: 'success',
-              message: '🚀 已自动连接GitHub云存储并加载学习数据！'
+              message: '🚀 已自动连接GitHub云存储并同步学习数据！'
             });
           } else {
             console.log('📝 GitHub仓库为空，将创建新的学习数据文件');
@@ -386,6 +617,16 @@ const SmartClaimsAnalyzer = () => {
 
     initializeGitHub();
   }, []); // 只在组件挂载时执行一次
+
+  // 当GitHub配置或自动同步设置改变时，重新启动自动同步
+  useEffect(() => {
+    startAutoSync();
+    return () => {
+      if (autoSyncRef.current) {
+        clearInterval(autoSyncRef.current);
+      }
+    };
+  }, [autoSyncEnabled, githubConfig.enabled, learningData.dataVersion]);
 
   // 改进的自动保存逻辑 - 防抖 + 状态检查
   useEffect(() => {
@@ -425,7 +666,8 @@ const SmartClaimsAnalyzer = () => {
     try {
       const updatedData = {
         ...learningData,
-        lastUpdated: new Date().toISOString()
+        lastUpdated: new Date().toISOString(),
+        dataVersion: (learningData.dataVersion || 0) + 1
       };
       
       setLearningData(updatedData);
@@ -526,7 +768,8 @@ const SmartClaimsAnalyzer = () => {
             userCorrections: [...(learningData.userCorrections || []), ...(imported.userCorrections || [])],
             keywordFrequency: { ...learningData.keywordFrequency, ...imported.keywordFrequency },
             lastUpdated: new Date().toISOString(),
-            version: '2.4-Misaki15'
+            version: '2.4-Misaki15',
+            dataVersion: (learningData.dataVersion || 0) + 1
           };
           
           setLearningData(mergedData);
@@ -606,6 +849,9 @@ const SmartClaimsAnalyzer = () => {
       // 删除关键词得分
       delete newData.keywordScores[keyword];
       
+      // 更新版本号
+      newData.dataVersion = (newData.dataVersion || 0) + 1;
+      
       return newData;
     });
     
@@ -641,6 +887,9 @@ const SmartClaimsAnalyzer = () => {
         newData.keywordScores[newKeyword.trim()] = newData.keywordScores[oldKeyword];
         delete newData.keywordScores[oldKeyword];
       }
+      
+      // 更新版本号
+      newData.dataVersion = (newData.dataVersion || 0) + 1;
       
       return newData;
     });
@@ -680,6 +929,9 @@ const SmartClaimsAnalyzer = () => {
           newData.newKeywords[category] = {};
         }
       }
+      
+      // 更新版本号
+      newData.dataVersion = (newData.dataVersion || 0) + 1;
       
       return newData;
     });
@@ -1137,6 +1389,9 @@ const SmartClaimsAnalyzer = () => {
       }
       newData.learningStats.totalCorrections++;
       
+      // 更新版本号
+      newData.dataVersion = (newData.dataVersion || 0) + 1;
+      
       return newData;
     });
 
@@ -1255,6 +1510,9 @@ const SmartClaimsAnalyzer = () => {
         });
       }
       
+      // 更新版本号
+      newData.dataVersion = (newData.dataVersion || 0) + 1;
+      
       return newData;
     });
 
@@ -1292,6 +1550,9 @@ const SmartClaimsAnalyzer = () => {
           newData.keywordScores[mk.keyword] = Math.min(1, currentScore + 0.05); // 小幅提升确认正确的关键词
         });
       }
+      
+      // 更新版本号
+      newData.dataVersion = (newData.dataVersion || 0) + 1;
       
       return newData;
     });
@@ -1368,6 +1629,7 @@ const SmartClaimsAnalyzer = () => {
       updatedData.newKeywords[category][efficacy].push(keyword);
       updatedData.keywordScores[keyword] = 0.7;
       updatedData.lastUpdated = new Date().toISOString();
+      updatedData.dataVersion = (updatedData.dataVersion || 0) + 1;
     
       // 6. 同时更新状态和保存
       setLearningData(updatedData);
@@ -1643,7 +1905,7 @@ const SmartClaimsAnalyzer = () => {
         headers.join('\t'), // 使用制表符分隔，便于粘贴到Excel
         ...analysisResults.map((result, index) => {
           return [
-            index + 1,
+            index + 1
             result.text,
             result.dimension1.join(', '),
             Array.isArray(result.dimension2) ? result.dimension2.join(', ') : result.dimension2,
@@ -1736,26 +1998,32 @@ const SmartClaimsAnalyzer = () => {
               <Sparkles className="text-purple-600 h-10 w-10" />
             </h1>
             <p className="text-lg text-gray-600 max-w-3xl mx-auto leading-relaxed">
-              🧠 AI自我学习优化 | 💡 多功效智能识别 | 📊 置信度评估 | 🎯 用户纠错学习 | 💾 内存存储 | ✅ Excel/CSV双格式导出 | 🔧 两步分析法 | 🐙 GitHub云存储 | 🏷️ 品类智能筛选
+              🧠 AI自我学习优化 | 💡 多功效智能识别 | 📊 置信度评估 | 🎯 用户纠错学习 | 💾 云端同步存储 | ✅ Excel/CSV双格式导出 | 🔧 两步分析法 | 🐙 GitHub云存储 | 🏷️ 品类智能筛选 | 🔄 多设备数据同步
               <br />
               <span className="text-sm text-blue-600 font-medium">
                 🎯 新版采用两步分析法：先基础库分析，再学习库增强，确保稳定性和准确性！
                 <br />
-                ☁️ 支持GitHub云端存储，学习数据永久保存，多设备同步！
+                ☁️ 支持GitHub云端存储，学习数据永久保存，多设备智能同步！
                 <br />
                 🏷️ 新增品类选择功能：根据产品类型智能筛选适用功效，提升分析精准度！
                 <br />
-                📊 Excel导出功能完整修复：支持真正的Excel文件下载，同时提供CSV备选方案！
+                🔄 新增智能同步功能：解决多设备数据冲突，支持自动合并和冲突解决！
               </span>
             </p>
             {githubConfig.enabled && lastSyncTime && (
-              <p className="text-sm text-gray-500 mt-2">
-                最后保存时间: {lastSaveTime?.toLocaleString()}
-                <span className="ml-4 flex items-center gap-1">
+              <p className="text-sm text-gray-500 mt-2 flex items-center justify-center gap-4">
+                <span>最后保存时间: {lastSaveTime?.toLocaleString()}</span>
+                <span className="flex items-center gap-1">
+                  <Clock size={14} />
                   GitHub同步: {lastSyncTime.toLocaleString()}
                   {syncStatus === 'success' && <CheckCircle size={16} className="text-green-600" />}
                   {syncStatus === 'error' && <XCircle size={16} className="text-red-600" />}
                   {syncStatus === 'syncing' && <Wifi size={16} className="text-blue-600 animate-pulse" />}
+                  {syncStatus === 'conflict' && <AlertCircle size={16} className="text-orange-600" />}
+                </span>
+                <span className="flex items-center gap-1">
+                  <Users size={14} />
+                  设备ID: {learningData.deviceId?.slice(-6)}
                 </span>
               </p>
             )}
@@ -1810,8 +2078,21 @@ const SmartClaimsAnalyzer = () => {
                   {syncStatus === 'syncing' && <Wifi className="animate-pulse" size={12} />}
                   {syncStatus === 'success' && <Cloud size={12} />}
                   {syncStatus === 'error' && <WifiOff size={12} />}
+                  {syncStatus === 'conflict' && <AlertCircle size={12} />}
                 </div>
               )}
+            </button>
+            <button
+              onClick={syncDataFromGitHub}
+              disabled={!githubConfig.enabled || syncStatus === 'syncing'}
+              className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors text-sm disabled:opacity-50"
+            >
+              {syncStatus === 'syncing' ? (
+                <RefreshCw className="animate-spin" size={16} />
+              ) : (
+                <RefreshCw size={16} />
+              )}
+              手动同步
             </button>
             <button
               onClick={clearLearningData}
@@ -1829,6 +2110,15 @@ const SmartClaimsAnalyzer = () => {
               />
               自动保存
             </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={autoSyncEnabled}
+                onChange={(e) => setAutoSyncEnabled(e.target.checked)}
+                className="rounded"
+              />
+              自动同步(5分钟)
+            </label>
           </div>
 
           {/* GitHub 配置面板 */}
@@ -1842,6 +2132,11 @@ const SmartClaimsAnalyzer = () => {
                 }`}>
                   {githubConfig.enabled ? '自动连接中' : '未连接'}
                 </span>
+                {syncStatus === 'conflict' && (
+                  <span className="px-2 py-1 rounded text-xs font-medium bg-orange-100 text-orange-800">
+                    数据冲突
+                  </span>
+                )}
               </h3>
               
               {/* 预设配置信息 */}
@@ -1856,6 +2151,7 @@ const SmartClaimsAnalyzer = () => {
                       <span className="text-green-600 font-medium">✅ 已自动连接</span> : 
                       <span className="text-orange-600 font-medium">⏳ 等待Vercel环境变量配置</span>
                     }</div>
+                    <div>当前设备: <code className="bg-white px-1 rounded">{learningData.deviceId}</code></div>
                   </div>
                 </div>
               )}
@@ -1980,6 +2276,7 @@ const SmartClaimsAnalyzer = () => {
                       </div>
                       <div><strong>步骤4：</strong> 重新部署项目，程序将自动连接GitHub并开始云端存储</div>
                       <div className="text-green-600"><strong>✅ 配置完成后，学习数据将实时同步到GitHub！</strong></div>
+                      <div className="text-purple-600"><strong>🔄 新增智能同步：多设备数据自动合并，冲突智能解决！</strong></div>
                     </>
                   ) : (
                     <>
@@ -1988,6 +2285,7 @@ const SmartClaimsAnalyzer = () => {
                       <div>3. 填写上述信息并测试连接</div>
                       <div>4. 启用后，学习数据将自动同步到 GitHub</div>
                       <div>5. 文件保存为：<code>learning-data.json</code></div>
+                      <div>6. 支持多设备智能同步和冲突解决</div>
                     </>
                   )}
                 </div>
@@ -2000,11 +2298,13 @@ const SmartClaimsAnalyzer = () => {
             <div className={`mb-4 p-4 rounded-lg flex items-start gap-2 ${
               validationMessage.type === 'error' ? 'bg-red-100 text-red-800' : 
               validationMessage.type === 'info' ? 'bg-blue-100 text-blue-800' : 
+              validationMessage.type === 'warning' ? 'bg-orange-100 text-orange-800' :
               'bg-green-100 text-green-800'
             }`}>
               <div className="flex-shrink-0 mt-0.5">
                 {validationMessage.type === 'error' ? <XCircle size={20} /> : 
                  validationMessage.type === 'info' ? <AlertCircle size={20} /> :
+                 validationMessage.type === 'warning' ? <AlertCircle size={20} /> :
                  <CheckCircle size={20} />}
               </div>
               <div className="flex-1 min-w-0">
@@ -2150,12 +2450,13 @@ const SmartClaimsAnalyzer = () => {
           <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-8 mb-8">
             <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-3">
               <Brain className="text-purple-600" />
-              AI学习面板 v2.4-Misaki15 - 实时GitHub云存储 + 智能管理
+              AI学习面板 v2.4-Misaki15 - 实时GitHub云存储 + 智能同步
               {githubConfig.enabled && (
                 <span className="flex items-center gap-1 bg-green-100 text-green-800 px-2 py-1 rounded text-sm">
                   <Cloud size={16} />
                   自动连接云端
                   {syncStatus === 'syncing' && <Wifi className="animate-pulse" size={12} />}
+                  {syncStatus === 'conflict' && <AlertCircle className="text-orange-600" size={12} />}
                 </span>
               )}
             </h2>
@@ -2200,12 +2501,26 @@ const SmartClaimsAnalyzer = () => {
                       {githubConfig.enabled ? '☁️ GitHub云存储' : '💾 内存存储'}
                     </span>
                   </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-600">数据版本</span>
+                    <span className="font-bold text-purple-600">
+                      v{learningData.dataVersion || 1}
+                    </span>
+                  </div>
                 </div>
                 {!githubConfig.enabled && (
                   <div className="mt-3 p-2 bg-orange-50 rounded text-xs">
                     <div className="font-semibold text-orange-800 mb-1">⚠️ 数据保存提醒：</div>
                     <div className="text-orange-700">
                       当前使用内存存储，页面刷新会丢失学习数据。建议启用GitHub云存储或定期导出数据。
+                    </div>
+                  </div>
+                )}
+                {syncStatus === 'conflict' && (
+                  <div className="mt-3 p-2 bg-orange-50 rounded text-xs">
+                    <div className="font-semibold text-orange-800 mb-1">⚠️ 数据冲突提醒：</div>
+                    <div className="text-orange-700">
+                      检测到云端数据冲突，请点击"手动同步"按钮解决冲突。
                     </div>
                   </div>
                 )}
@@ -2217,7 +2532,7 @@ const SmartClaimsAnalyzer = () => {
                   <BookOpen className="h-5 w-5" />
                   学习库管理
                   <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded ml-2">
-                    累加存储
+                    多设备同步
                   </span>
                   <button
                     onClick={() => {
@@ -2317,11 +2632,12 @@ const SmartClaimsAnalyzer = () => {
                 <div className="mt-4 p-3 bg-blue-50 rounded text-xs">
                   <div className="font-semibold text-blue-800 mb-2">🛠️ 学习库管理操作：</div>
                   <div className="text-blue-700 space-y-1">
-                    <div>• <strong>累加存储</strong>：{githubConfig.enabled ? '所有学习数据自动保存到GitHub云端' : '数据保存在内存中，页面刷新会丢失'}</div>
+                    <div>• <strong>多设备同步</strong>：{githubConfig.enabled ? '所有学习数据自动同步到GitHub云端，支持多设备访问' : '数据保存在内存中，页面刷新会丢失'}</div>
                     <div>• <strong>双击关键词</strong>：编辑关键词内容</div>
                     <div>• <strong>🗑️ 删除按钮</strong>：删除单个关键词记录</div>
                     <div>• <strong>🗑️ 清空按钮</strong>：清空整个功效的所有关键词</div>
                     <div>• <strong>得分显示</strong>：显示AI对关键词的信任度（越高越准确）</div>
+                    <div>• <strong>冲突解决</strong>：当多设备数据冲突时，可选择智能合并策略</div>
                   </div>
                 </div>
               </div>
@@ -2500,6 +2816,12 @@ const SmartClaimsAnalyzer = () => {
                     <span>准确率</span>
                     <span className="font-bold bg-white/20 px-2 py-1 rounded">
                       {learningData.learningStats?.accuracyRate || 100}%
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>数据版本</span>
+                    <span className="font-bold bg-white/20 px-2 py-1 rounded">
+                      v{learningData.dataVersion || 1}
                     </span>
                   </div>
                 </div>
@@ -2777,6 +3099,7 @@ const SmartClaimsAnalyzer = () => {
                               <div>• <strong>勾选/取消</strong>：直接调整AI的分析结果</div>
                               <div>• <strong>保存修改</strong>：确认纠错并让AI学习</div>
                               <div>• <strong>添加关键词</strong>：请到"学习面板"进行</div>
+                              <div>• <strong>多设备同步</strong>：修改将自动同步到云端</div>
                             </div>
                           </div>
                         )}
@@ -2785,6 +3108,143 @@ const SmartClaimsAnalyzer = () => {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {/* 冲突解决模态框 */}
+        {showConflictModal && conflictData && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+              <div className="p-6 border-b border-gray-200">
+                <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                  <GitBranch className="text-orange-600" />
+                  数据冲突解决
+                </h3>
+                <p className="text-gray-600 mt-2">
+                  检测到本地数据与云端数据存在冲突，请选择合并策略：
+                </p>
+              </div>
+              
+              <div className="flex-1 p-6 overflow-y-auto">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* 本地数据 */}
+                  <div className="border rounded-lg p-4">
+                    <h4 className="font-semibold text-blue-600 mb-3 flex items-center gap-2">
+                      <Users size={16} />
+                      本地数据（当前设备）
+                    </h4>
+                    <div className="space-y-2 text-sm">
+                      <div>关键词数量: {Object.values(conflictData.local.newKeywords).reduce((total, category) => 
+                        total + Object.values(category).reduce((sum, keywords) => sum + keywords.length, 0), 0
+                      )}</div>
+                      <div>纠错次数: {conflictData.local.userCorrections?.length || 0}</div>
+                      <div>最后更新: {new Date(conflictData.local.lastUpdated || 0).toLocaleString()}</div>
+                      <div>设备ID: {conflictData.local.deviceId}</div>
+                      <div>数据版本: v{conflictData.local.dataVersion || 1}</div>
+                    </div>
+                  </div>
+                  
+                  {/* 云端数据 */}
+                  <div className="border rounded-lg p-4">
+                    <h4 className="font-semibold text-green-600 mb-3 flex items-center gap-2">
+                      <Cloud size={16} />
+                      云端数据（其他设备）
+                    </h4>
+                    <div className="space-y-2 text-sm">
+                      <div>关键词数量: {Object.values(conflictData.remote.newKeywords).reduce((total, category) => 
+                        total + Object.values(category).reduce((sum, keywords) => sum + keywords.length, 0), 0
+                      )}</div>
+                      <div>纠错次数: {conflictData.remote.userCorrections?.length || 0}</div>
+                      <div>最后更新: {new Date(conflictData.remote.lastUpdated || 0).toLocaleString()}</div>
+                      <div>设备ID: {conflictData.remote.deviceId}</div>
+                      <div>数据版本: v{conflictData.remote.dataVersion || 1}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="p-6 border-t border-gray-200 flex gap-4 justify-end">
+                <button
+                  onClick={() => {
+                    // 使用本地数据覆盖云端
+                    const localData = {
+                      ...conflictData.local,
+                      lastSyncTime: new Date().toISOString(),
+                      dataSource: 'local',
+                      dataVersion: (conflictData.local.dataVersion || 0) + 1
+                    };
+                    setLearningData(localData);
+                    saveDataToGitHub(localData);
+                    setShowConflictModal(false);
+                    setConflictData(null);
+                    setSyncStatus('success');
+                    setValidationMessage({
+                      type: 'success',
+                      message: '✅ 已使用本地数据覆盖云端数据'
+                    });
+                    setTimeout(() => setValidationMessage({ type: '', message: '' }), 3000);
+                  }}
+                  className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700"
+                >
+                  使用本地数据
+                </button>
+                
+                <button
+                  onClick={() => {
+                    // 使用云端数据覆盖本地
+                    const remoteData = {
+                      ...conflictData.remote,
+                      lastSyncTime: new Date().toISOString(),
+                      deviceId: conflictData.local.deviceId, // 保持当前设备ID
+                      dataSource: 'github'
+                    };
+                    setLearningData(remoteData);
+                    setShowConflictModal(false);
+                    setConflictData(null);
+                    setSyncStatus('success');
+                    setValidationMessage({
+                      type: 'success',
+                      message: '✅ 已使用云端数据覆盖本地数据'
+                    });
+                    setTimeout(() => setValidationMessage({ type: '', message: '' }), 3000);
+                  }}
+                  className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700"
+                >
+                  使用云端数据
+                </button>
+                
+                <button
+                  onClick={() => {
+                    // 智能合并
+                    const mergedData = mergeData(conflictData.local, conflictData.remote);
+                    setLearningData(mergedData);
+                    saveDataToGitHub(mergedData);
+                    setShowConflictModal(false);
+                    setConflictData(null);
+                    setSyncStatus('success');
+                    setValidationMessage({
+                      type: 'success',
+                      message: '🔄 已智能合并两端数据，保留所有学习成果'
+                    });
+                    setTimeout(() => setValidationMessage({ type: '', message: '' }), 3000);
+                  }}
+                  className="bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700"
+                >
+                  智能合并（推荐）
+                </button>
+                
+                <button
+                  onClick={() => {
+                    setShowConflictModal(false);
+                    setConflictData(null);
+                    setSyncStatus('idle');
+                  }}
+                  className="bg-gray-600 text-white px-6 py-2 rounded-lg hover:bg-gray-700"
+                >
+                  取消
+                </button>
+              </div>
             </div>
           </div>
         )}
