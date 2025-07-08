@@ -1905,7 +1905,7 @@ const SmartClaimsAnalyzer = () => {
         headers.join('\t'), // 使用制表符分隔，便于粘贴到Excel
         ...analysisResults.map((result, index) => {
           return [
-            index + 1
+            index + 1,
             result.text,
             result.dimension1.join(', '),
             Array.isArray(result.dimension2) ? result.dimension2.join(', ') : result.dimension2,
