@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Download, RotateCcw, Sparkles, TrendingUp, BarChart3, Eye, Brain, BookOpen, Target, AlertCircle, CheckCircle, XCircle, Shield, Save, Upload, Edit, ThumbsUp, ThumbsDown, Copy, Github, Cloud, Wifi, WifiOff, RefreshCw, GitBranch, Clock, Users } from 'lucide-react';
+import { Download, RotateCcw, Sparkles, TrendingUp, BarChart3, Eye, Brain, BookOpen, Target, AlertCircle, CheckCircle, XCircle, Shield, Save, Upload, Edit, ThumbsUp, Copy, Github, Cloud, Wifi, WifiOff, RefreshCw, GitBranch, Clock, Users } from 'lucide-react';
 
 const SmartClaimsAnalyzer = () => {
   // 生成设备ID
@@ -43,12 +43,21 @@ const SmartClaimsAnalyzer = () => {
     };
   };
 
+  // 检查本地是否有实际学习数据
+  const checkHasLearningData = (data) => {
+    const keywordCount = Object.values(data.newKeywords || {}).reduce((total, category) => 
+      total + Object.values(category).reduce((sum, keywords) => sum + keywords.length, 0), 0
+    );
+    const correctionCount = (data.userCorrections || []).length;
+    return keywordCount > 0 || correctionCount > 0;
+  };
+
   const [inputText, setInputText] = useState('');
   const [analysisResults, setAnalysisResults] = useState([]);
   const [learningData, setLearningData] = useState(loadInitialData());
   const [showLearningPanel, setShowLearningPanel] = useState(false);
   const [editingResult, setEditingResult] = useState(null);
-  const [correctionMode, setCorrectionMode] = useState(''); // 纠错模式：'delete', 'add', 'replace'
+  const [correctionMode, setCorrectionMode] = useState('');
   const [newKeywordInput, setNewKeywordInput] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedEfficacy, setSelectedEfficacy] = useState('');
@@ -58,7 +67,7 @@ const SmartClaimsAnalyzer = () => {
   const [saveQueue, setSaveQueue] = useState([]);
   const [exportData, setExportData] = useState('');
   const [showExportModal, setShowExportModal] = useState(false);
-  const [selectedProductCategory, setSelectedProductCategory] = useState(''); // 新增：产品品类选择
+  const [selectedProductCategory, setSelectedProductCategory] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [pendingSave, setPendingSave] = useState(false);
   const saveTimeoutRef = useRef(null);
@@ -70,6 +79,10 @@ const SmartClaimsAnalyzer = () => {
   const [conflictData, setConflictData] = useState(null);
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(true);
   const autoSyncRef = useRef(null);
+  
+  // 新增状态：区分初始加载和后续同步
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [hasLocalLearningData, setHasLocalLearningData] = useState(false);
   
   // 智能消息保护机制
   const setValidationMessageSafe = (newMessage) => {
@@ -197,76 +210,82 @@ const SmartClaimsAnalyzer = () => {
 
   // 智能保存管理函数
   const saveLearningDataSmart = async (immediate = false, dataToSave = null) => {
-  // 如果正在保存中，处理冲突
-  if (isSaving) {
-    if (immediate) {
-      console.log('🔄 当前正在保存，标记为待保存');
-      setPendingSave(true);
-      return true;
-    } else {
-      console.log('⏳ 正在保存中，跳过自动保存');
-      return true;
-    }
-  }
-
-  try {
-    setIsSaving(true);
-    console.log(`💾 开始${immediate ? '立即' : '自动'}保存学习数据...`);
-    
-    // 使用传入的数据或当前状态数据
-    const updatedData = dataToSave || {
-      ...learningData,
-      lastUpdated: new Date().toISOString(),
-      dataVersion: (learningData.dataVersion || 0) + 1
-    };
-    
-    // 如果没有传入数据，更新状态
-    if (!dataToSave) {
-      setLearningData(updatedData);
-    }
-    
-    setLastSaveTime(new Date());
-    
-    if (githubConfig.enabled) {
-      const success = await saveDataToGitHub(updatedData);
-      if (success) {
-        console.log('✅ GitHub保存成功');
+    if (isSaving) {
+      if (immediate) {
+        console.log('🔄 当前正在保存，标记为待保存');
+        setPendingSave(true);
         return true;
       } else {
-        throw new Error('GitHub保存返回失败');
+        console.log('⏳ 正在保存中，跳过自动保存');
+        return true;
       }
     }
-    
-    console.log('✅ 本地保存成功');
-    return true;
-    
-  } catch (error) {
-    console.error('❌ 保存失败:', error);
-    
-    // 只在立即保存时显示错误给用户
-    if (immediate) {
-      setValidationMessageSafe({
-        type: 'error',
-        message: `❌ 保存失败: ${error.message}`
-      });
-      setTimeout(() => {
-        setValidationMessage({ type: '', message: '' });
-      }, 3000);
+
+    try {
+      setIsSaving(true);
+      console.log(`💾 开始${immediate ? '立即' : '自动'}保存学习数据...`);
+      
+      const updatedData = dataToSave || {
+        ...learningData,
+        lastUpdated: new Date().toISOString(),
+        dataVersion: (learningData.dataVersion || 0) + 1
+      };
+      
+      // 检查是否有实际学习数据
+      const hasLearning = checkHasLearningData(updatedData);
+      
+      if (!dataToSave) {
+        setLearningData(updatedData);
+      }
+      
+      setLastSaveTime(new Date());
+      
+      // 只有在非初始加载且有学习数据时才同步到GitHub
+      if (githubConfig.enabled && !isInitialLoad && hasLearning) {
+        const success = await saveDataToGitHub(updatedData);
+        if (success) {
+          console.log('✅ GitHub同步成功');
+          setHasLocalLearningData(true);
+          return true;
+        } else {
+          throw new Error('GitHub保存返回失败');
+        }
+      } else {
+        if (isInitialLoad) {
+          console.log('⏸️ 初始加载期间，跳过GitHub同步');
+        } else if (!hasLearning) {
+          console.log('⏸️ 无学习数据，跳过GitHub同步');
+        }
+      }
+      
+      console.log('✅ 本地保存成功');
+      return true;
+      
+    } catch (error) {
+      console.error('❌ 保存失败:', error);
+      
+      if (immediate) {
+        setValidationMessageSafe({
+          type: 'error',
+          message: `❌ 保存失败: ${error.message}`
+        });
+        setTimeout(() => {
+          setValidationMessage({ type: '', message: '' });
+        }, 3000);
+      }
+      
+      return false;
+      
+    } finally {
+      setIsSaving(false);
+      
+      if (pendingSave) {
+        setPendingSave(false);
+        console.log('🔄 执行待保存操作');
+        setTimeout(() => saveLearningDataSmart(false), 1500);
+      }
     }
-    
-    return false;
-    
-  } finally {
-    setIsSaving(false);
-    
-    // 检查是否有待保存的操作
-    if (pendingSave) {
-      setPendingSave(false);
-      console.log('🔄 执行待保存操作');
-      setTimeout(() => saveLearningDataSmart(false), 1500);
-    }
-  }
-};
+  };
   
   // 预设GitHub配置 - 针对 Misaki-15/cosmetics-analyzer-learning 仓库
   const PRESET_GITHUB_CONFIG = {
@@ -364,49 +383,79 @@ const SmartClaimsAnalyzer = () => {
       });
 
       const remoteData = await loadDataFromGitHub(false);
+      const hasLocal = checkHasLearningData(learningData);
       
       if (!remoteData) {
-        // GitHub上没有数据，上传本地数据
-        const uploadData = {
-          ...learningData,
-          lastSyncTime: new Date().toISOString(),
-          dataSource: 'local'
-        };
-        
-        const success = await saveDataToGitHub(uploadData);
-        if (success) {
-          setLearningData(uploadData);
+        // GitHub上没有数据
+        if (hasLocal) {
+          // 本地有数据，上传到GitHub
+          const uploadData = {
+            ...learningData,
+            lastSyncTime: new Date().toISOString(),
+            dataSource: 'local'
+          };
+          
+          const success = await saveDataToGitHub(uploadData);
+          if (success) {
+            setLearningData(uploadData);
+            setSyncStatus('success');
+            setLastSyncTime(new Date());
+            setValidationMessage({
+              type: 'success',
+              message: '✅ 本地学习数据已上传到GitHub云端！'
+            });
+          }
+        } else {
+          // 本地和远程都没有数据
           setSyncStatus('success');
-          setLastSyncTime(new Date());
           setValidationMessage({
-            type: 'success',
-            message: '✅ 本地数据已上传到GitHub云端！这是首次同步。'
+            type: 'info',
+            message: 'ℹ️ GitHub和本地都没有学习数据，开始学习后将自动同步'
           });
         }
-      } else if (detectConflict(learningData, remoteData)) {
-        // 检测到冲突，显示冲突解决界面
-        setConflictData({ local: learningData, remote: remoteData });
-        setShowConflictModal(true);
-        setSyncStatus('conflict');
-        setValidationMessage({
-          type: 'warning',
-          message: '⚠️ 检测到数据冲突！请选择合并策略。'
-        });
-        return;
       } else {
-        // 智能合并数据
-        const mergedData = mergeData(learningData, remoteData);
-        setLearningData(mergedData);
-        
-        // 保存合并后的数据到GitHub
-        const success = await saveDataToGitHub(mergedData);
-        if (success) {
-          setSyncStatus('success');
-          setLastSyncTime(new Date());
+        // GitHub上有数据
+        if (hasLocal && detectConflict(learningData, remoteData)) {
+          // 检测到冲突
+          setConflictData({ local: learningData, remote: remoteData });
+          setShowConflictModal(true);
+          setSyncStatus('conflict');
           setValidationMessage({
-            type: 'success',
-            message: '🔄 数据同步成功！已智能合并本地和云端数据，学习库已更新。'
+            type: 'warning',
+            message: '⚠️ 检测到数据冲突！请选择合并策略。'
           });
+          return;
+        } else {
+          // 安全合并数据
+          const mergedData = hasLocal ? mergeData(learningData, remoteData) : {
+            ...remoteData,
+            deviceId: learningData.deviceId,
+            lastSyncTime: new Date().toISOString()
+          };
+          
+          setLearningData(mergedData);
+          setHasLocalLearningData(true);
+          
+          // 只有在有实际学习数据时才回写GitHub
+          if (checkHasLearningData(mergedData)) {
+            const success = await saveDataToGitHub(mergedData);
+            if (success) {
+              setSyncStatus('success');
+              setLastSyncTime(new Date());
+              setValidationMessage({
+                type: 'success',
+                message: hasLocal ? 
+                  '🔄 数据同步成功！已智能合并本地和云端数据' : 
+                  '📥 云端学习数据导入成功！'
+              });
+            }
+          } else {
+            setSyncStatus('success');
+            setValidationMessage({
+              type: 'info',
+              message: '📥 已导入云端数据，但无有效学习内容'
+            });
+          }
         }
       }
       
@@ -424,15 +473,19 @@ const SmartClaimsAnalyzer = () => {
 
   // 启动自动同步
   const startAutoSync = () => {
-    if (!autoSyncEnabled || !githubConfig.enabled) return;
+    if (!autoSyncEnabled || !githubConfig.enabled || isInitialLoad) return;
     
-    // 清除之前的定时器
     if (autoSyncRef.current) {
       clearInterval(autoSyncRef.current);
     }
     
-    // 每5分钟自动同步一次
     autoSyncRef.current = setInterval(async () => {
+      // 只有在有学习数据时才进行自动同步
+      if (!checkHasLearningData(learningData)) {
+        console.log('⏸️ 无学习数据，跳过自动同步');
+        return;
+      }
+      
       console.log('🔄 执行自动同步...');
       try {
         const remoteData = await loadDataFromGitHub(false);
@@ -578,40 +631,82 @@ const SmartClaimsAnalyzer = () => {
       if (githubConfig.enabled && githubConfig.token) {
         console.log('🚀 自动初始化GitHub连接: Misaki-15/cosmetics-analyzer-learning');
         
-        // 尝试加载已有的学习数据
+        // 检查本地是否有学习数据
+        const hasLocal = checkHasLearningData(learningData);
+        setHasLocalLearningData(hasLocal);
+        
         try {
           setSyncStatus('syncing');
-          const data = await loadDataFromGitHub();
-          if (data) {
-            // 智能合并初始数据
-            const mergedData = mergeData(learningData, data);
-            setLearningData(mergedData);
-            console.log('✅ 成功加载并合并GitHub学习数据');
-            setValidationMessage({
-              type: 'success',
-              message: '🚀 已自动连接GitHub云存储并同步学习数据！'
-            });
+          const remoteData = await loadDataFromGitHub(false);
+          
+          if (!remoteData) {
+            // GitHub上没有数据
+            if (hasLocal) {
+              // 本地有数据，上传到GitHub
+              console.log('📤 本地有学习数据，上传到GitHub');
+              await saveDataToGitHub(learningData);
+              setValidationMessage({
+                type: 'success',
+                message: '📤 本地学习数据已备份到GitHub云端！'
+              });
+            } else {
+              // 本地和远程都没有数据，正常情况
+              console.log('📝 GitHub仓库为空，等待学习数据产生');
+              setValidationMessage({
+                type: 'info',
+                message: '☁️ 已连接GitHub云存储，开始学习后数据将自动同步'
+              });
+            }
           } else {
-            console.log('📝 GitHub仓库为空，将创建新的学习数据文件');
-            setValidationMessage({
-              type: 'info',
-              message: '☁️ 已连接GitHub云存储，准备创建学习数据文件...'
-            });
+            // GitHub上有数据
+            if (hasLocal) {
+              // 本地也有数据，需要智能合并
+              console.log('🔄 本地和远程都有数据，进行智能合并');
+              if (detectConflict(learningData, remoteData)) {
+                setConflictData({ local: learningData, remote: remoteData });
+                setShowConflictModal(true);
+                setSyncStatus('conflict');
+                return;
+              } else {
+                const mergedData = mergeData(learningData, remoteData);
+                setLearningData(mergedData);
+                await saveDataToGitHub(mergedData);
+              }
+            } else {
+              // 本地无数据，仅导入远程数据（关键修复点）
+              console.log('📥 本地无学习数据，仅导入GitHub数据');
+              setLearningData(prevData => ({
+                ...remoteData,
+                deviceId: prevData.deviceId, // 保持当前设备ID
+                lastSyncTime: new Date().toISOString()
+              }));
+              setHasLocalLearningData(true);
+              setValidationMessage({
+                type: 'success',
+                message: '📥 已从GitHub导入学习数据！检测到现有学习库'
+              });
+            }
           }
+          
           setSyncStatus('success');
           setLastSyncTime(new Date());
+          
         } catch (error) {
           console.error('GitHub初始化失败:', error);
           setSyncStatus('error');
           setValidationMessage({
             type: 'error',
-            message: '❌ GitHub自动连接失败，请检查配置'
+            message: '❌ GitHub连接失败，将使用本地模式'
           });
+        } finally {
+          setIsInitialLoad(false); // 标记初始加载完成
         }
         
         setTimeout(() => {
           setValidationMessage({ type: '', message: '' });
         }, 5000);
+      } else {
+        setIsInitialLoad(false);
       }
     };
 
@@ -626,7 +721,7 @@ const SmartClaimsAnalyzer = () => {
         clearInterval(autoSyncRef.current);
       }
     };
-  }, [autoSyncEnabled, githubConfig.enabled, learningData.dataVersion]);
+  }, [autoSyncEnabled, githubConfig.enabled, learningData.dataVersion, isInitialLoad]);
 
   // 改进的自动保存逻辑 - 防抖 + 状态检查
   useEffect(() => {
@@ -656,10 +751,10 @@ const SmartClaimsAnalyzer = () => {
 
   // 监听学习数据变化
   useEffect(() => {
-    if (autoSaveEnabled) {
+    if (autoSaveEnabled && !isInitialLoad) {
       setSaveQueue(prev => [...prev, Date.now()]);
     }
-  }, [learningData, autoSaveEnabled]);
+  }, [learningData, autoSaveEnabled, isInitialLoad]);
 
   // 保存学习数据
   const saveLearningData = async () => {
@@ -735,6 +830,7 @@ const SmartClaimsAnalyzer = () => {
   const clearLearningData = () => {
     const emptyData = loadInitialData();
     setLearningData(emptyData);
+    setHasLocalLearningData(false);
     setValidationMessage({
       type: 'success',
       message: '✅ 学习数据已清空'
@@ -773,6 +869,7 @@ const SmartClaimsAnalyzer = () => {
           };
           
           setLearningData(mergedData);
+          setHasLocalLearningData(checkHasLearningData(mergedData));
           setValidationMessage({
             type: 'success',
             message: '✅ 学习数据导入成功'
@@ -1633,6 +1730,7 @@ const SmartClaimsAnalyzer = () => {
     
       // 6. 同时更新状态和保存
       setLearningData(updatedData);
+      setHasLocalLearningData(true);
     
       // 7. 显示成功消息
       setValidationMessage({
@@ -1962,6 +2060,71 @@ const SmartClaimsAnalyzer = () => {
     }
   };
 
+  // 冲突解决函数
+  const resolveConflict = async (strategy) => {
+    if (!conflictData) return;
+
+    try {
+      let resolvedData;
+      
+      switch (strategy) {
+        case 'useLocal':
+          resolvedData = {
+            ...conflictData.local,
+            lastSyncTime: new Date().toISOString(),
+            dataSource: 'local-override'
+          };
+          break;
+        case 'useRemote':
+          resolvedData = {
+            ...conflictData.remote,
+            deviceId: learningData.deviceId,
+            lastSyncTime: new Date().toISOString(),
+            dataSource: 'remote-override'
+          };
+          break;
+        case 'merge':
+        default:
+          resolvedData = mergeData(conflictData.local, conflictData.remote);
+          resolvedData.dataSource = 'merged-conflict';
+          break;
+      }
+
+      setLearningData(resolvedData);
+      
+      // 保存解决后的数据到GitHub
+      const success = await saveDataToGitHub(resolvedData);
+      if (success) {
+        setSyncStatus('success');
+        setLastSyncTime(new Date());
+        setValidationMessage({
+          type: 'success',
+          message: `✅ 冲突已解决！使用策略：${
+            strategy === 'useLocal' ? '保留本地数据' :
+            strategy === 'useRemote' ? '使用云端数据' : '智能合并'
+          }`
+        });
+      }
+      
+      setShowConflictModal(false);
+      setConflictData(null);
+      
+      setTimeout(() => {
+        setValidationMessage({ type: '', message: '' });
+      }, 3000);
+      
+    } catch (error) {
+      console.error('解决冲突失败:', error);
+      setValidationMessage({
+        type: 'error',
+        message: `❌ 解决冲突失败: ${error.message}`
+      });
+      setTimeout(() => {
+        setValidationMessage({ type: '', message: '' });
+      }, 3000);
+    }
+  };
+
   const getStatistics = () => {
     if (analysisResults.length === 0) return null;
     
@@ -1994,49 +2157,63 @@ const SmartClaimsAnalyzer = () => {
           <div className="text-center mb-6">
             <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent mb-4 flex items-center justify-center gap-3">
               <Brain className="text-blue-600 h-10 w-10" />
-              智能学习型化妆品宣称分析器 v2.4-Misaki15
-              <Sparkles className="text-purple-600 h-10 w-10" />
+              智能化妆品宣称分析器 v2.4-Misaki15-DataSafe
+              <Cloud className="text-green-600 h-10 w-10" />
             </h1>
             <p className="text-lg text-gray-600 max-w-3xl mx-auto leading-relaxed">
-              🧠 AI自我学习优化 | 💡 多功效智能识别 | 📊 置信度评估 | 🎯 用户纠错学习 | 💾 云端同步存储 | ✅ Excel/CSV双格式导出 | 🔧 两步分析法 | 🐙 GitHub云存储 | 🏷️ 品类智能筛选 | 🔄 多设备数据同步
+              🧠 AI自我学习优化 | 💡 多功效智能识别 | 📊 置信度评估 | 🎯 用户纠错学习 | ☁️ GitHub云存储 | ✅ Excel/CSV双格式导出 | 🔧 两步分析法 | 🏷️ 品类智能筛选
               <br />
               <span className="text-sm text-blue-600 font-medium">
                 🎯 新版采用两步分析法：先基础库分析，再学习库增强，确保稳定性和准确性！
                 <br />
-                ☁️ 支持GitHub云端存储，学习数据永久保存，多设备智能同步！
+                ☁️ <strong>数据安全保护</strong>：初始载入仅导入云端数据，学习后才开始云端同步，防止数据丢失！
                 <br />
-                🏷️ 新增品类选择功能：根据产品类型智能筛选适用功效，提升分析精准度！
+                🏷️ 品类选择功能：根据产品类型智能筛选适用功效，提升分析精准度！
                 <br />
-                🔄 新增智能同步功能：解决多设备数据冲突，支持自动合并和冲突解决！
+                📊 Excel导出功能：支持真正的Excel文件下载，同时提供CSV备选方案！
               </span>
             </p>
-            {githubConfig.enabled && lastSyncTime && (
-              <p className="text-sm text-gray-500 mt-2 flex items-center justify-center gap-4">
-                <span>最后保存时间: {lastSaveTime?.toLocaleString()}</span>
-                <span className="flex items-center gap-1">
-                  <Clock size={14} />
-                  GitHub同步: {lastSyncTime.toLocaleString()}
-                  {syncStatus === 'success' && <CheckCircle size={16} className="text-green-600" />}
-                  {syncStatus === 'error' && <XCircle size={16} className="text-red-600" />}
-                  {syncStatus === 'syncing' && <Wifi size={16} className="text-blue-600 animate-pulse" />}
-                  {syncStatus === 'conflict' && <AlertCircle size={16} className="text-orange-600" />}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Users size={14} />
-                  设备ID: {learningData.deviceId?.slice(-6)}
-                </span>
-              </p>
-            )}
-            {!githubConfig.enabled && lastSaveTime && (
-              <p className="text-sm text-gray-500 mt-2">
-                最后保存时间: {lastSaveTime.toLocaleString()}
-                {learningData.learningStats && (
-                  <span className="ml-4">
-                    当前准确率: <span className="font-bold text-green-600">{learningData.learningStats.accuracyRate}%</span>
+            
+            {/* GitHub连接状态显示 */}
+            <div className="mt-4 p-4 bg-gradient-to-r from-blue-50 to-green-50 rounded-xl">
+              <div className="flex items-center justify-center gap-6">
+                <div className="flex items-center gap-2">
+                  <div className={`w-3 h-3 rounded-full ${githubConfig.enabled ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                  <span className="text-sm font-medium">
+                    GitHub云存储: <span className={`font-bold ${githubConfig.enabled ? 'text-green-600' : 'text-gray-600'}`}>
+                      {githubConfig.enabled ? '✅ 已连接' : '❌ 未连接'}
+                    </span>
                   </span>
+                </div>
+                {githubConfig.enabled && lastSyncTime && (
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 text-sm">
+                      {syncStatus === 'syncing' && <Wifi className="animate-pulse text-blue-600" size={16} />}
+                      {syncStatus === 'success' && <Cloud className="text-green-600" size={16} />}
+                      {syncStatus === 'error' && <WifiOff className="text-red-600" size={16} />}
+                      {syncStatus === 'conflict' && <AlertCircle className="text-orange-600" size={16} />}
+                      <span className="text-gray-600">
+                        最后同步: {lastSyncTime.toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
                 )}
-              </p>
-            )}
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600">
+                    学习数据: <span className={`font-medium ${hasLocalLearningData ? 'text-blue-600' : 'text-gray-500'}`}>
+                      {hasLocalLearningData ? '✅ 已有数据' : '📝 等待学习'}
+                    </span>
+                  </span>
+                </div>
+              </div>
+              {isInitialLoad && (
+                <div className="text-center mt-2">
+                  <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded">
+                    🔄 正在初始化GitHub连接...
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* 数据管理按钮 */}
@@ -2072,7 +2249,7 @@ const SmartClaimsAnalyzer = () => {
               } text-white px-4 py-2 rounded-lg transition-colors text-sm`}
             >
               <Github size={16} />
-              GitHub云存储
+              GitHub配置
               {githubConfig.enabled && (
                 <div className="flex items-center gap-1">
                   {syncStatus === 'syncing' && <Wifi className="animate-pulse" size={12} />}
@@ -2087,11 +2264,7 @@ const SmartClaimsAnalyzer = () => {
               disabled={!githubConfig.enabled || syncStatus === 'syncing'}
               className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors text-sm disabled:opacity-50"
             >
-              {syncStatus === 'syncing' ? (
-                <RefreshCw className="animate-spin" size={16} />
-              ) : (
-                <RefreshCw size={16} />
-              )}
+              <RefreshCw size={16} className={syncStatus === 'syncing' ? 'animate-spin' : ''} />
               手动同步
             </button>
             <button
@@ -2117,7 +2290,7 @@ const SmartClaimsAnalyzer = () => {
                 onChange={(e) => setAutoSyncEnabled(e.target.checked)}
                 className="rounded"
               />
-              自动同步(5分钟)
+              自动同步
             </label>
           </div>
 
@@ -2126,35 +2299,13 @@ const SmartClaimsAnalyzer = () => {
             <div className="mb-6 bg-gradient-to-br from-gray-50 to-blue-50 p-6 rounded-xl border border-gray-200">
               <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
                 <Github className="text-gray-600" />
-                GitHub 云端存储配置
+                GitHub云存储配置
                 <span className={`px-2 py-1 rounded text-xs font-medium ${
                   githubConfig.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
                 }`}>
-                  {githubConfig.enabled ? '自动连接中' : '未连接'}
+                  {githubConfig.enabled ? '已连接' : '未连接'}
                 </span>
-                {syncStatus === 'conflict' && (
-                  <span className="px-2 py-1 rounded text-xs font-medium bg-orange-100 text-orange-800">
-                    数据冲突
-                  </span>
-                )}
               </h3>
-              
-              {/* 预设配置信息 */}
-              {PRESET_GITHUB_CONFIG.autoEnable && (
-                <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-                  <div className="font-semibold text-blue-800 mb-2">🚀 预设自动配置（Vercel部署）</div>
-                  <div className="text-sm text-blue-700 space-y-1">
-                    <div>目标仓库: <code className="bg-white px-1 rounded">Misaki-15/cosmetics-analyzer-learning</code></div>
-                    <div>数据文件: <code className="bg-white px-1 rounded">learning-data.json</code></div>
-                    <div>部署平台: <strong>Vercel</strong></div>
-                    <div>连接状态: {githubConfig.enabled ? 
-                      <span className="text-green-600 font-medium">✅ 已自动连接</span> : 
-                      <span className="text-orange-600 font-medium">⏳ 等待Vercel环境变量配置</span>
-                    }</div>
-                    <div>当前设备: <code className="bg-white px-1 rounded">{learningData.deviceId}</code></div>
-                  </div>
-                </div>
-              )}
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div>
@@ -2167,11 +2318,7 @@ const SmartClaimsAnalyzer = () => {
                     onChange={(e) => setGithubConfig(prev => ({ ...prev, owner: e.target.value }))}
                     placeholder="your-username"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-                    disabled={githubConfig.enabled && PRESET_GITHUB_CONFIG.autoEnable}
                   />
-                  {githubConfig.enabled && PRESET_GITHUB_CONFIG.autoEnable && (
-                    <div className="text-xs text-green-600 mt-1">已通过预设配置自动填入</div>
-                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -2181,13 +2328,9 @@ const SmartClaimsAnalyzer = () => {
                     type="text"
                     value={githubConfig.repo}
                     onChange={(e) => setGithubConfig(prev => ({ ...prev, repo: e.target.value }))}
-                    placeholder="cosmetics-analyzer-learning"
+                    placeholder="my-learning-repo"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-                    disabled={githubConfig.enabled && PRESET_GITHUB_CONFIG.autoEnable}
                   />
-                  {githubConfig.enabled && PRESET_GITHUB_CONFIG.autoEnable && (
-                    <div className="text-xs text-green-600 mt-1">已通过预设配置自动填入</div>
-                  )}
                 </div>
               </div>
               
@@ -2209,17 +2352,13 @@ const SmartClaimsAnalyzer = () => {
                   onChange={(e) => setGithubConfig(prev => ({ ...prev, token: e.target.value }))}
                   placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-                  disabled={githubConfig.enabled && PRESET_GITHUB_CONFIG.autoEnable}
                 />
-                {githubConfig.enabled && PRESET_GITHUB_CONFIG.autoEnable && (
-                  <div className="text-xs text-green-600 mt-1">已通过环境变量自动配置</div>
-                )}
               </div>
 
               <div className="flex flex-wrap gap-3 items-center">
                 <button
                   onClick={testGitHubConnection}
-                  disabled={syncStatus === 'syncing' || (githubConfig.enabled && PRESET_GITHUB_CONFIG.autoEnable)}
+                  disabled={syncStatus === 'syncing'}
                   className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm disabled:opacity-50"
                 >
                   {syncStatus === 'syncing' ? (
@@ -2227,32 +2366,30 @@ const SmartClaimsAnalyzer = () => {
                   ) : (
                     <Github size={16} />
                   )}
-                  {githubConfig.enabled && PRESET_GITHUB_CONFIG.autoEnable ? '已自动连接' : '测试连接'}
+                  测试连接
                 </button>
                 
-                {!PRESET_GITHUB_CONFIG.autoEnable && (
-                  <button
-                    onClick={() => setGithubConfig(prev => ({ ...prev, enabled: !prev.enabled }))}
-                    disabled={!githubConfig.token || !githubConfig.owner || !githubConfig.repo}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors text-sm disabled:opacity-50 ${
-                      githubConfig.enabled 
-                        ? 'bg-red-600 text-white hover:bg-red-700' 
-                        : 'bg-green-600 text-white hover:bg-green-700'
-                    }`}
-                  >
-                    {githubConfig.enabled ? (
-                      <>
-                        <WifiOff size={16} />
-                        禁用云存储
-                      </>
-                    ) : (
-                      <>
-                        <Cloud size={16} />
-                        启用云存储
-                      </>
-                    )}
-                  </button>
-                )}
+                <button
+                  onClick={() => setGithubConfig(prev => ({ ...prev, enabled: !prev.enabled }))}
+                  disabled={!githubConfig.token || !githubConfig.owner || !githubConfig.repo}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors text-sm disabled:opacity-50 ${
+                    githubConfig.enabled 
+                      ? 'bg-red-600 text-white hover:bg-red-700' 
+                      : 'bg-green-600 text-white hover:bg-green-700'
+                  }`}
+                >
+                  {githubConfig.enabled ? (
+                    <>
+                      <WifiOff size={16} />
+                      禁用云存储
+                    </>
+                  ) : (
+                    <>
+                      <Cloud size={16} />
+                      启用云存储
+                    </>
+                  )}
+                </button>
 
                 {lastSyncTime && (
                   <span className="text-xs text-gray-500">
@@ -2262,32 +2399,13 @@ const SmartClaimsAnalyzer = () => {
               </div>
 
               <div className="mt-4 p-3 bg-blue-50 rounded-lg text-sm text-blue-800">
-                <div className="font-semibold mb-2">📖 {PRESET_GITHUB_CONFIG.autoEnable ? 'Vercel自动部署指南' : '手动配置说明'}：</div>
+                <div className="font-semibold mb-2">📖 GitHub配置说明：</div>
                 <div className="space-y-1 text-xs">
-                  {PRESET_GITHUB_CONFIG.autoEnable ? (
-                    <>
-                      <div><strong>步骤1：</strong> 在GitHub创建公开仓库 <code>Misaki-15/cosmetics-analyzer-learning</code></div>
-                      <div><strong>步骤2：</strong> 生成GitHub Personal Access Token（需要repo权限）</div>
-                      <div><strong>步骤3：</strong> 在Vercel项目设置 → Environment Variables 中添加：</div>
-                      <div className="ml-4 bg-white p-2 rounded text-gray-800 font-mono text-xs">
-                        REACT_APP_GITHUB_OWNER=Misaki-15<br/>
-                        REACT_APP_GITHUB_REPO=cosmetics-analyzer-learning<br/>
-                        REACT_APP_GITHUB_TOKEN=ghp_your_token_here
-                      </div>
-                      <div><strong>步骤4：</strong> 重新部署项目，程序将自动连接GitHub并开始云端存储</div>
-                      <div className="text-green-600"><strong>✅ 配置完成后，学习数据将实时同步到GitHub！</strong></div>
-                      <div className="text-purple-600"><strong>🔄 新增智能同步：多设备数据自动合并，冲突智能解决！</strong></div>
-                    </>
-                  ) : (
-                    <>
-                      <div>1. 在 GitHub 创建一个<strong>公开仓库</strong>（如：cosmetics-analyzer-learning）</div>
-                      <div>2. 生成 Personal Access Token，需要 <strong>repo</strong> 权限</div>
-                      <div>3. 填写上述信息并测试连接</div>
-                      <div>4. 启用后，学习数据将自动同步到 GitHub</div>
-                      <div>5. 文件保存为：<code>learning-data.json</code></div>
-                      <div>6. 支持多设备智能同步和冲突解决</div>
-                    </>
-                  )}
+                  <div>1. 在 GitHub 创建一个<strong>私有仓库</strong>（推荐）用于存储您的学习数据</div>
+                  <div>2. 生成 Personal Access Token，需要 <strong>repo</strong> 权限</div>
+                  <div>3. 填写上述信息并测试连接</div>
+                  <div>4. 启用后，您的学习数据将安全地同步到 GitHub</div>
+                  <div>5. <strong>数据安全</strong>：初次连接只导入云端数据，不会清空您的学习成果</div>
                 </div>
               </div>
             </div>
@@ -2297,14 +2415,14 @@ const SmartClaimsAnalyzer = () => {
           {validationMessage.message && (
             <div className={`mb-4 p-4 rounded-lg flex items-start gap-2 ${
               validationMessage.type === 'error' ? 'bg-red-100 text-red-800' : 
+              validationMessage.type === 'warning' ? 'bg-yellow-100 text-yellow-800' :
               validationMessage.type === 'info' ? 'bg-blue-100 text-blue-800' : 
-              validationMessage.type === 'warning' ? 'bg-orange-100 text-orange-800' :
               'bg-green-100 text-green-800'
             }`}>
               <div className="flex-shrink-0 mt-0.5">
                 {validationMessage.type === 'error' ? <XCircle size={20} /> : 
-                 validationMessage.type === 'info' ? <AlertCircle size={20} /> :
                  validationMessage.type === 'warning' ? <AlertCircle size={20} /> :
+                 validationMessage.type === 'info' ? <AlertCircle size={20} /> :
                  <CheckCircle size={20} />}
               </div>
               <div className="flex-1 min-w-0">
@@ -2397,7 +2515,7 @@ const SmartClaimsAnalyzer = () => {
             <label className="block text-lg font-semibold text-gray-700 mb-4">
               📝 宣称内容输入 
               <span className="text-red-500 ml-1">*</span>
-              <span className="text-gray-500 text-sm font-normal ml-3">（每行一个宣称，AI会持续学习优化）</span>
+              <span className="text-gray-500 text-sm font-normal ml-3">（每行一个宣称，支持批量分析）</span>
             </label>
             <div className="relative">
               <textarea
@@ -2450,13 +2568,26 @@ const SmartClaimsAnalyzer = () => {
           <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-8 mb-8">
             <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-3">
               <Brain className="text-purple-600" />
-              AI学习面板 v2.4-Misaki15 - 实时GitHub云存储 + 智能同步
-              {githubConfig.enabled && (
+              AI学习面板 v2.4-Misaki15-DataSafe
+              <span className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium ${
+                githubConfig.enabled ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+              }`}>
+                {githubConfig.enabled ? (
+                  <>
+                    <Cloud size={16} />
+                    云端同步
+                  </>
+                ) : (
+                  <>
+                    <Users size={16} />
+                    本地模式
+                  </>
+                )}
+              </span>
+              {githubConfig.enabled && syncStatus === 'success' && (
                 <span className="flex items-center gap-1 bg-green-100 text-green-800 px-2 py-1 rounded text-sm">
                   <Cloud size={16} />
-                  自动连接云端
-                  {syncStatus === 'syncing' && <Wifi className="animate-pulse" size={12} />}
-                  {syncStatus === 'conflict' && <AlertCircle className="text-orange-600" size={12} />}
+                  已连接
                 </span>
               )}
             </h2>
@@ -2490,21 +2621,27 @@ const SmartClaimsAnalyzer = () => {
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
+                    <span className="text-gray-600">用户纠正次数</span>
+                    <span className="font-bold text-green-600">
+                      {learningData.userCorrections?.length || 0}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
                     <span className="text-gray-600">当前准确率</span>
                     <span className="font-bold text-green-600">
                       {learningData.learningStats?.accuracyRate || 100}%
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-gray-600">数据持久化</span>
+                    <span className="text-gray-600">数据存储</span>
                     <span className={`font-bold ${githubConfig.enabled ? 'text-green-600' : 'text-orange-600'}`}>
-                      {githubConfig.enabled ? '☁️ GitHub云存储' : '💾 内存存储'}
+                      {githubConfig.enabled ? '☁️ GitHub云端' : '💾 本地存储'}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-gray-600">数据版本</span>
-                    <span className="font-bold text-purple-600">
-                      v{learningData.dataVersion || 1}
+                    <span className="text-gray-600">设备ID</span>
+                    <span className="font-mono text-xs text-gray-500">
+                      {learningData.deviceId?.slice(-8) || 'unknown'}
                     </span>
                   </div>
                 </div>
@@ -2512,15 +2649,7 @@ const SmartClaimsAnalyzer = () => {
                   <div className="mt-3 p-2 bg-orange-50 rounded text-xs">
                     <div className="font-semibold text-orange-800 mb-1">⚠️ 数据保存提醒：</div>
                     <div className="text-orange-700">
-                      当前使用内存存储，页面刷新会丢失学习数据。建议启用GitHub云存储或定期导出数据。
-                    </div>
-                  </div>
-                )}
-                {syncStatus === 'conflict' && (
-                  <div className="mt-3 p-2 bg-orange-50 rounded text-xs">
-                    <div className="font-semibold text-orange-800 mb-1">⚠️ 数据冲突提醒：</div>
-                    <div className="text-orange-700">
-                      检测到云端数据冲突，请点击"手动同步"按钮解决冲突。
+                      当前使用本地存储，页面刷新会丢失学习数据。建议启用GitHub云存储或定期导出数据。
                     </div>
                   </div>
                 )}
@@ -2531,8 +2660,10 @@ const SmartClaimsAnalyzer = () => {
                 <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
                   <BookOpen className="h-5 w-5" />
                   学习库管理
-                  <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded ml-2">
-                    多设备同步
+                  <span className={`text-xs px-2 py-1 rounded ml-2 ${
+                    githubConfig.enabled ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                  }`}>
+                    {githubConfig.enabled ? '云端备份' : '本地存储'}
                   </span>
                   <button
                     onClick={() => {
@@ -2541,7 +2672,7 @@ const SmartClaimsAnalyzer = () => {
                       const result = analyzeText(testText);
                       setValidationMessage({
                         type: 'info',
-                        message: `🧪 测试结果 (神经酰胺):\n功效: ${result.dimension1.join(', ')}\n类型: ${result.dimension2.join(', ')}\n持续性: ${result.dimension3}\n\n匹配关键词:\n${result.matchedKeywords.map(mk => `"${mk.keyword}" → ${mk.result} (${mk.source})`).join('\n')}`
+                        message: `🧪 测试结果 (神经酰胺):\n功效: ${result.dimension1.join(', ')}\n类型: ${result.dimension2.join(', ')}\n持续性: ${result.dimension3}\n\n匹配关键词:\n${result.matchedKeywords.map(mk => `"${mk.keyword}" → ${mk.result} (${mk.source})`).join('\n')}\n\n说明: base=基础库, learned=学习库`
                       });
                       setTimeout(() => {
                         setValidationMessage({ type: '', message: '' });
@@ -2632,12 +2763,11 @@ const SmartClaimsAnalyzer = () => {
                 <div className="mt-4 p-3 bg-blue-50 rounded text-xs">
                   <div className="font-semibold text-blue-800 mb-2">🛠️ 学习库管理操作：</div>
                   <div className="text-blue-700 space-y-1">
-                    <div>• <strong>多设备同步</strong>：{githubConfig.enabled ? '所有学习数据自动同步到GitHub云端，支持多设备访问' : '数据保存在内存中，页面刷新会丢失'}</div>
                     <div>• <strong>双击关键词</strong>：编辑关键词内容</div>
                     <div>• <strong>🗑️ 删除按钮</strong>：删除单个关键词记录</div>
                     <div>• <strong>🗑️ 清空按钮</strong>：清空整个功效的所有关键词</div>
                     <div>• <strong>得分显示</strong>：显示AI对关键词的信任度（越高越准确）</div>
-                    <div>• <strong>冲突解决</strong>：当多设备数据冲突时，可选择智能合并策略</div>
+                    <div>• <strong>数据同步</strong>：{githubConfig.enabled ? '自动备份到GitHub云端' : '请启用GitHub云存储保障数据安全'}</div>
                   </div>
                 </div>
               </div>
@@ -2648,6 +2778,11 @@ const SmartClaimsAnalyzer = () => {
               <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
                 <Target className="h-5 w-5" />
                 手动添加关键词
+                <span className={`text-xs px-2 py-1 rounded ${
+                  githubConfig.enabled ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                }`}>
+                  {githubConfig.enabled ? '自动同步到云端' : '本地存储'}
+                </span>
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <input
@@ -2705,7 +2840,7 @@ const SmartClaimsAnalyzer = () => {
                   className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 justify-center"
                 >
                   <Shield size={16} />
-                  智能添加
+                  添加关键词
                 </button>
               </div>
               
@@ -2757,12 +2892,131 @@ const SmartClaimsAnalyzer = () => {
           </div>
         )}
 
+        {/* 数据冲突解决模态框 */}
+        {showConflictModal && conflictData && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl max-w-4xl max-h-[80vh] w-full overflow-hidden">
+              <div className="p-6 border-b border-gray-200">
+                <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                  <GitBranch className="text-orange-600" />
+                  数据冲突检测
+                </h3>
+                <p className="text-gray-600 mt-2">
+                  检测到本地数据和云端数据存在冲突，请选择合并策略：
+                </p>
+              </div>
+              
+              <div className="p-6 overflow-y-auto max-h-96">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* 本地数据 */}
+                  <div className="border border-blue-200 rounded-lg p-4 bg-blue-50">
+                    <h4 className="font-semibold text-blue-800 mb-3 flex items-center gap-2">
+                      <Users className="h-4 w-4" />
+                      本地数据
+                    </h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span>关键词数量:</span>
+                        <span className="font-medium">
+                          {Object.values(conflictData.local.newKeywords || {}).reduce((total, category) => 
+                            total + Object.values(category).reduce((sum, keywords) => sum + keywords.length, 0), 0
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>纠正次数:</span>
+                        <span className="font-medium">{conflictData.local.userCorrections?.length || 0}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>设备ID:</span>
+                        <span className="font-mono text-xs">{conflictData.local.deviceId?.slice(-8)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>最后更新:</span>
+                        <span className="text-xs">{new Date(conflictData.local.lastUpdated || 0).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 云端数据 */}
+                  <div className="border border-green-200 rounded-lg p-4 bg-green-50">
+                    <h4 className="font-semibold text-green-800 mb-3 flex items-center gap-2">
+                      <Cloud className="h-4 w-4" />
+                      云端数据
+                    </h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span>关键词数量:</span>
+                        <span className="font-medium">
+                          {Object.values(conflictData.remote.newKeywords || {}).reduce((total, category) => 
+                            total + Object.values(category).reduce((sum, keywords) => sum + keywords.length, 0), 0
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>纠正次数:</span>
+                        <span className="font-medium">{conflictData.remote.userCorrections?.length || 0}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>设备ID:</span>
+                        <span className="font-mono text-xs">{conflictData.remote.deviceId?.slice(-8)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>最后更新:</span>
+                        <span className="text-xs">{new Date(conflictData.remote.lastUpdated || 0).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-6 border-t border-gray-200 flex gap-4 justify-end">
+                <button
+                  onClick={() => resolveConflict('useLocal')}
+                  className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                >
+                  <Users size={16} />
+                  使用本地数据
+                </button>
+                <button
+                  onClick={() => resolveConflict('useRemote')}
+                  className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+                >
+                  <Cloud size={16} />
+                  使用云端数据
+                </button>
+                <button
+                  onClick={() => resolveConflict('merge')}
+                  className="bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
+                >
+                  <GitBranch size={16} />
+                  智能合并（推荐）
+                </button>
+                <button
+                  onClick={() => {
+                    setShowConflictModal(false);
+                    setConflictData(null);
+                  }}
+                  className="bg-gray-600 text-white px-6 py-2 rounded-lg hover:bg-gray-700 transition-colors"
+                >
+                  稍后处理
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 统计信息 */}
         {stats && (
           <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-8 mb-8">
             <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-3">
               <BarChart3 className="text-blue-600" />
               智能分析统计
+              <span className={`text-sm px-2 py-1 rounded ${
+                githubConfig.enabled ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+              }`}>
+                {githubConfig.enabled ? '云端同步' : '本地模式'}
+              </span>
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-6 rounded-xl text-white shadow-lg">
@@ -2801,6 +3055,12 @@ const SmartClaimsAnalyzer = () => {
                 <div className="text-lg font-semibold mb-3">AI学习状态</div>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between items-center">
+                    <span>存储模式</span>
+                    <span className="font-bold bg-white/20 px-2 py-1 rounded text-xs">
+                      {githubConfig.enabled ? '☁️ 云端' : '💾 本地'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
                     <span>纠错次数</span>
                     <span className="font-bold bg-white/20 px-2 py-1 rounded">{learningData.userCorrections?.length || 0}</span>
                   </div>
@@ -2818,12 +3078,6 @@ const SmartClaimsAnalyzer = () => {
                       {learningData.learningStats?.accuracyRate || 100}%
                     </span>
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span>数据版本</span>
-                    <span className="font-bold bg-white/20 px-2 py-1 rounded">
-                      v{learningData.dataVersion || 1}
-                    </span>
-                  </div>
                 </div>
               </div>
             </div>
@@ -2835,16 +3089,25 @@ const SmartClaimsAnalyzer = () => {
           <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-8 mb-8">
             <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-3">
               <TrendingUp className="text-green-600" />
-              智能分析结果 v2.4-Misaki15
+              智能分析结果 v2.4-Misaki15-DataSafe
               <span className="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-3 py-1 rounded-full text-lg font-bold">
                 {analysisResults.length}
               </span>
-              {githubConfig.enabled && syncStatus === 'success' && (
-                <span className="flex items-center gap-1 bg-green-100 text-green-800 px-2 py-1 rounded text-sm">
-                  <Cloud size={16} />
-                  云端已同步
-                </span>
-              )}
+              <span className={`flex items-center gap-1 px-2 py-1 rounded text-sm ${
+                githubConfig.enabled ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+              }`}>
+                {githubConfig.enabled ? (
+                  <>
+                    <Cloud size={16} />
+                    云端学习
+                  </>
+                ) : (
+                  <>
+                    <Users size={16} />
+                    本地学习
+                  </>
+                )}
+              </span>
             </h2>
             
             <div className="overflow-x-auto">
@@ -3097,9 +3360,8 @@ const SmartClaimsAnalyzer = () => {
                             <div className="text-xs text-blue-700 bg-white rounded p-2">
                               <div className="font-semibold mb-1">💡 纠错说明：</div>
                               <div>• <strong>勾选/取消</strong>：直接调整AI的分析结果</div>
-                              <div>• <strong>保存修改</strong>：确认纠错并让AI学习</div>
+                              <div>• <strong>保存修改</strong>：确认纠错并让AI学习{githubConfig.enabled ? '（自动同步到云端）' : '（保存到本地）'}</div>
                               <div>• <strong>添加关键词</strong>：请到"学习面板"进行</div>
-                              <div>• <strong>多设备同步</strong>：修改将自动同步到云端</div>
                             </div>
                           </div>
                         )}
@@ -3108,143 +3370,6 @@ const SmartClaimsAnalyzer = () => {
                   ))}
                 </tbody>
               </table>
-            </div>
-          </div>
-        )}
-
-        {/* 冲突解决模态框 */}
-        {showConflictModal && conflictData && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
-              <div className="p-6 border-b border-gray-200">
-                <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                  <GitBranch className="text-orange-600" />
-                  数据冲突解决
-                </h3>
-                <p className="text-gray-600 mt-2">
-                  检测到本地数据与云端数据存在冲突，请选择合并策略：
-                </p>
-              </div>
-              
-              <div className="flex-1 p-6 overflow-y-auto">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* 本地数据 */}
-                  <div className="border rounded-lg p-4">
-                    <h4 className="font-semibold text-blue-600 mb-3 flex items-center gap-2">
-                      <Users size={16} />
-                      本地数据（当前设备）
-                    </h4>
-                    <div className="space-y-2 text-sm">
-                      <div>关键词数量: {Object.values(conflictData.local.newKeywords).reduce((total, category) => 
-                        total + Object.values(category).reduce((sum, keywords) => sum + keywords.length, 0), 0
-                      )}</div>
-                      <div>纠错次数: {conflictData.local.userCorrections?.length || 0}</div>
-                      <div>最后更新: {new Date(conflictData.local.lastUpdated || 0).toLocaleString()}</div>
-                      <div>设备ID: {conflictData.local.deviceId}</div>
-                      <div>数据版本: v{conflictData.local.dataVersion || 1}</div>
-                    </div>
-                  </div>
-                  
-                  {/* 云端数据 */}
-                  <div className="border rounded-lg p-4">
-                    <h4 className="font-semibold text-green-600 mb-3 flex items-center gap-2">
-                      <Cloud size={16} />
-                      云端数据（其他设备）
-                    </h4>
-                    <div className="space-y-2 text-sm">
-                      <div>关键词数量: {Object.values(conflictData.remote.newKeywords).reduce((total, category) => 
-                        total + Object.values(category).reduce((sum, keywords) => sum + keywords.length, 0), 0
-                      )}</div>
-                      <div>纠错次数: {conflictData.remote.userCorrections?.length || 0}</div>
-                      <div>最后更新: {new Date(conflictData.remote.lastUpdated || 0).toLocaleString()}</div>
-                      <div>设备ID: {conflictData.remote.deviceId}</div>
-                      <div>数据版本: v{conflictData.remote.dataVersion || 1}</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="p-6 border-t border-gray-200 flex gap-4 justify-end">
-                <button
-                  onClick={() => {
-                    // 使用本地数据覆盖云端
-                    const localData = {
-                      ...conflictData.local,
-                      lastSyncTime: new Date().toISOString(),
-                      dataSource: 'local',
-                      dataVersion: (conflictData.local.dataVersion || 0) + 1
-                    };
-                    setLearningData(localData);
-                    saveDataToGitHub(localData);
-                    setShowConflictModal(false);
-                    setConflictData(null);
-                    setSyncStatus('success');
-                    setValidationMessage({
-                      type: 'success',
-                      message: '✅ 已使用本地数据覆盖云端数据'
-                    });
-                    setTimeout(() => setValidationMessage({ type: '', message: '' }), 3000);
-                  }}
-                  className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700"
-                >
-                  使用本地数据
-                </button>
-                
-                <button
-                  onClick={() => {
-                    // 使用云端数据覆盖本地
-                    const remoteData = {
-                      ...conflictData.remote,
-                      lastSyncTime: new Date().toISOString(),
-                      deviceId: conflictData.local.deviceId, // 保持当前设备ID
-                      dataSource: 'github'
-                    };
-                    setLearningData(remoteData);
-                    setShowConflictModal(false);
-                    setConflictData(null);
-                    setSyncStatus('success');
-                    setValidationMessage({
-                      type: 'success',
-                      message: '✅ 已使用云端数据覆盖本地数据'
-                    });
-                    setTimeout(() => setValidationMessage({ type: '', message: '' }), 3000);
-                  }}
-                  className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700"
-                >
-                  使用云端数据
-                </button>
-                
-                <button
-                  onClick={() => {
-                    // 智能合并
-                    const mergedData = mergeData(conflictData.local, conflictData.remote);
-                    setLearningData(mergedData);
-                    saveDataToGitHub(mergedData);
-                    setShowConflictModal(false);
-                    setConflictData(null);
-                    setSyncStatus('success');
-                    setValidationMessage({
-                      type: 'success',
-                      message: '🔄 已智能合并两端数据，保留所有学习成果'
-                    });
-                    setTimeout(() => setValidationMessage({ type: '', message: '' }), 3000);
-                  }}
-                  className="bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700"
-                >
-                  智能合并（推荐）
-                </button>
-                
-                <button
-                  onClick={() => {
-                    setShowConflictModal(false);
-                    setConflictData(null);
-                    setSyncStatus('idle');
-                  }}
-                  className="bg-gray-600 text-white px-6 py-2 rounded-lg hover:bg-gray-700"
-                >
-                  取消
-                </button>
-              </div>
             </div>
           </div>
         )}
